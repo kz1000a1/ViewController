@@ -143,34 +143,50 @@ void isr() noexcept {
       } else {
         switch (f.id) {
           case CAN_ID_SHIFT:  // 0x048
-            if (xQueueSendToBackFromISR(xQueueView, &f, &task_woken) == pdPASS) {
-              d048++;
+            if (DebugMode != DEBUG) {
+              xQueueSendToBackFromISR(xQueueView, &f, &task_woken);
             } else {
-              e048++;
+              if (xQueueSendToBackFromISR(xQueueView, &f, &task_woken) == pdPASS) {
+                d048++;
+              } else {
+                e048++;
+              }
             }
             break;
 
           case CAN_ID_SPEED:  // 0x139
-            if (xQueueSendToBackFromISR(xQueueView, &f, &task_woken) == pdPASS) {
-              d139++;
+            if (DebugMode != DEBUG) {
+              xQueueSendToBackFromISR(xQueueView, &f, &task_woken);
             } else {
-              e139++;
+              if (xQueueSendToBackFromISR(xQueueView, &f, &task_woken) == pdPASS) {
+                d139++;
+              } else {
+                e139++;
+              }
             }
             break;
 
           case CAN_ID_TCU:  // 0x174
-            if (xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken) == pdPASS) {
-              d174++;
+            if (DebugMode != DEBUG) {
+              xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken);
             } else {
-              e174++;
+              if (xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken) == pdPASS) {
+                d174++;
+              } else {
+                e174++;
+              }
             }
             break;
 
           case CAN_ID_CCU:  // 0x390
-            if (xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken) == pdPASS) {
-              d390++;
+            if (DebugMode != DEBUG) {
+              xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken);
             } else {
-              e390++;
+              if (xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken) == pdPASS) {
+                d390++;
+              } else {
+                e390++;
+              }
             }
             break;
 
@@ -197,7 +213,7 @@ void IRAM_ATTR can_isr(void* arg) {
   isr();
 }
 
-bool can_install() noexcept {  
+bool can_install() noexcept {
   if (DebugMode == DEBUG) {
     Serial.println("CAN bus starting...");
   }
@@ -328,7 +344,7 @@ bool can_start() noexcept {
   if (DebugMode == DEBUG) {
     Serial.println("CAN bus started!");
   }
-  
+
   return true;
 }
 

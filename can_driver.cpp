@@ -197,8 +197,10 @@ void IRAM_ATTR can_isr(void* arg) {
   isr();
 }
 
-bool can_install() noexcept {
-  Serial.println("CAN bus starting...");
+bool can_install() noexcept {  
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus starting...");
+  }
 
   ENTER_CRITICAL();
 
@@ -213,7 +215,9 @@ bool can_install() noexcept {
   xQueueIdle = xQueueCreateStatic(_queue_length, _queue_item_size, _queue_storage_idle, &_static_queue_idle);
   xQueueView = xQueueCreateStatic(_queue_length, _queue_item_size, _queue_storage_view, &_static_queue_view);
 
-  Serial.println("CAN bus frame queue created...");
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus frame queue created...");
+  }
 
   //Get clock source resolution
   uint32_t clock_source_hz = 0;
@@ -237,7 +241,9 @@ bool can_install() noexcept {
   twai_ll_set_clock_source(0, t_config.clk_src);
   twai_ll_enable_clock(0, true);
 
-  Serial.println("CAN bus peripheral enabled...");
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus peripheral enabled...");
+  }
 
   twai_ll_enter_reset_mode(dev);
   if (!twai_ll_is_in_reset_mode(dev)) {
@@ -255,7 +261,9 @@ bool can_install() noexcept {
   twai_ll_set_tec(dev, 0);
   twai_ll_set_err_warn_lim(dev, 96);
 
-  Serial.println("CAN bus mode reset...");
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus mode reset...");
+  }
 
   // configure bus timing, acceptance filter, CLKOUT, and interrupts
   twai_ll_set_bus_timing(dev, brp, t_config.sjw, t_config.tseg_1, t_config.tseg_2, t_config.triple_sampling);
@@ -268,12 +276,14 @@ bool can_install() noexcept {
 
   EXIT_CRITICAL();
 
-  Serial.println("CAN bus timings reset...");
-  Serial.printf("          BRP: %3u\n", brp);
-  Serial.printf("          SJW: %3u\n", t_config.sjw);
-  Serial.printf("        TSEG1: %3u\n", t_config.tseg_1);
-  Serial.printf("        TSEG2: %3u\n", t_config.tseg_2);
-  Serial.printf("  3x Sampling: %3s\n", t_config.triple_sampling == 0 ? "No" : "Yes");
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus timings reset...");
+    Serial.printf("          BRP: %3u\n", brp);
+    Serial.printf("          SJW: %3u\n", t_config.sjw);
+    Serial.printf("        TSEG1: %3u\n", t_config.tseg_1);
+    Serial.printf("        TSEG2: %3u\n", t_config.tseg_2);
+    Serial.printf("  3x Sampling: %3s\n", t_config.triple_sampling == 0 ? "No" : "Yes");
+  }
 
   //  hal.dev = TWAI_LL_GET_HW(0);
   hal.dev = dev;
@@ -286,14 +296,20 @@ bool can_install() noexcept {
   esp_rom_gpio_connect_in_signal(CAN_RX_PIN, twai_controller_periph_signals.controllers[0].rx_sig, false);
   gpio_func_sel(CAN_TX_PIN, PIN_FUNC_GPIO);
   esp_rom_gpio_connect_out_signal(CAN_TX_PIN, twai_controller_periph_signals.controllers[0].tx_sig, false, false);
-  Serial.println("CAN bus GPIO pins reset...");
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus GPIO pins reset...");
+  }
 
   // setup interrupt service routine
   esp_intr_alloc(ETS_TWAI_INTR_SOURCE, ESP_INTR_FLAG_LEVEL1, can_isr, NULL, &_isr_handle);
-  Serial.println("CAN bus interrupt handler installed...");
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus interrupt handler installed...");
+  }
 
   esp_intr_enable(_isr_handle);
-  Serial.println("CAN bus interrupt handler enabled...");
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus interrupt handler enabled...");
+  }
 
   return true;
 }
@@ -309,8 +325,10 @@ bool can_start() noexcept {
 
   EXIT_CRITICAL();
 
-  Serial.println("CAN bus started!");
-
+  if (DebugMode == DEBUG) {
+    Serial.println("CAN bus started!");
+  }
+  
   return true;
 }
 

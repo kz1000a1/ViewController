@@ -27,7 +27,7 @@
 #define RELAY0 GPIO_NUM_16
 #define LED GPIO_NUM_23
 
-enum debug_mode DebugMode = DEBUG;
+enum debug_mode DebugMode = NORMAL; // NORMAL or DEBUG or CANDUMP
 
 static bool driver_installed = false;
 TaskHandle_t Core0Handle = NULL;
@@ -579,6 +579,6 @@ void loop() {
     Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", c390_0, d390_0, c390_1, d390_1, c390_0 + d390_0 + c390_1 + d390_1, d390, e390, e390 + d390, c390_0 + d390_0 + c390_1 + d390_1 - d390);
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
     Serial.println("");
-    sleep(10);
   }
+  sleep(10);
 }

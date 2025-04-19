@@ -37,8 +37,8 @@
 #include "subaru_levorg_vnx.h"
 #include "can_driver.hpp"
 
-#define CAN_RX_PIN GPIO_NUM_27
-#define CAN_TX_PIN GPIO_NUM_26
+#define CAN_RX_PIN GPIO_NUM_26
+#define CAN_TX_PIN GPIO_NUM_25
 
 union frame_info {
   uint8_t u8;

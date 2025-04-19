@@ -1,9 +1,8 @@
-# Engine Auto Stop Eliminator Firmware for SUBARU Levorg VN5
+# Front Camera View Auto Start with Engine Auto Stop Eliminator Firmware for SUBARU Levorg VN5
 
-This repository contains sources for the engine start-stop system eliminator firmware for SUBARU Levorg VN5, based off of the [EngineAutoStopEliminator](https://github.com/kz1000a1/EngineAutoStopEliminator).
-This firmware developed with [TWAI driver by Espressif](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/twai.html) for compatibility.
-Therefore, this firmware may works with most ESP32 based system(M5Stack,M5Atom,ESP32 Dev Module,ESP32C3 Dev Module...)
-.
+This repository contains sources for the front camera view auto start with engine start-stop system eliminator firmware for SUBARU Levorg VN5, based off of the [EngineAutoStopEliminator](https://github.com/kz1000a1/EngineAutoStopEliminator).
+The front camera view auto start works on Core 0 and the engine start-stop system eliminator works on Core 1. Therefore, it works only on two core ESP32 system(s).
+Auto view mode was added after applied D Levorg VN5.This firmware enable Levorg applied C to auto view mode like function.
 
 ## Safety disclaimer
 

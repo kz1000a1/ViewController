@@ -23,11 +23,9 @@
 #include "driver/twai.h"
 #include "subaru_levorg_vnx.h"
 #include "can_driver.hpp"
+#include "led.hpp"
 
-#define RELAY0 GPIO_NUM_16
-#define LED GPIO_NUM_23
-
-enum debug_mode DebugMode = NORMAL; // NORMAL or DEBUG or CANDUMP
+enum debug_mode DebugMode = DEBUG; // NORMAL or DEBUG or CANDUMP
 
 static bool driver_installed = false;
 TaskHandle_t Core0Handle = NULL;
@@ -153,19 +151,6 @@ void view_on() {
   }
 }
 
-void led_on() {
-#ifdef LED
-  digitalWrite(LED, HIGH);
-#endif
-}
-
-void led_off() {
-#ifdef LED
-  digitalWrite(LED, LOW);
-#endif
-}
-
-
 void setup() {
   if (DebugMode != NORMAL) {
     Serial.begin(115200);
@@ -176,10 +161,8 @@ void setup() {
   // GPIO Pin
   pinMode(RELAY0, OUTPUT);
   digitalWrite(RELAY0, LOW);
-#ifdef LED
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, LOW);
-#endif
+
+  led_init();
 
   can_install();
   can_start();

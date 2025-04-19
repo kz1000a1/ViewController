@@ -20,27 +20,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef __CAN_DRIVER_HPP__
-#define __CAN_DRIVER_HPP__
+#pragma once
 
+#include <driver/ledc.h>
 #include "hardware.h"
 
-struct frame {
-  uint32_t id;      //!< PID
-  uint8_t data[8];  //!< payload byte access
-};
+/**
+ * Initialize LEDC
+ */
+void led_init() noexcept;
 
-extern QueueHandle_t xQueueIdle;
-extern QueueHandle_t xQueueView;
+/**
+ * Turn on built-in LED
+ */
+void led_on() noexcept;
 
-extern uint32_t d048, e048;
-extern uint32_t d139, e139;
-extern uint32_t d174, e174;
-extern uint32_t d390, e390;
-
-
-bool can_install() noexcept;
-bool can_start() noexcept;
-esp_err_t can_transmit(const twai_message_t *, TickType_t);
-
-#endif /* __CAN_DRIVER_HPP__ */
+/**
+ * Turn off built-in LED
+ */
+void led_off() noexcept;

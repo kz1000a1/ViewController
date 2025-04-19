@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2025 kz1000a1
+// Copyright (c) 2022 Joe Roback <joe.roback@gmail.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,27 +20,44 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef __CAN_DRIVER_HPP__
-#define __CAN_DRIVER_HPP__
+#include "led.hpp"
 
-#include "hardware.h"
+#include <driver/ledc.h>
 
-struct frame {
-  uint32_t id;      //!< PID
-  uint8_t data[8];  //!< payload byte access
+ledc_timer_config_t _timer_config = {
+  .speed_mode = LEDC_LOW_SPEED_MODE,
+  .duty_resolution = LEDC_TIMER_13_BIT,
+  .timer_num = LEDC_TIMER_0,
+  .freq_hz = 5000,
+  .clk_cfg = LEDC_AUTO_CLK
+};
+ledc_channel_config_t _channel_config = {
+  .gpio_num = LED,
+  .speed_mode = LEDC_LOW_SPEED_MODE,
+  .channel = LEDC_CHANNEL_0,
+  .intr_type = LEDC_INTR_DISABLE,
+  .timer_sel = LEDC_TIMER_0,
+  .duty = 0,  // Set duty to 0%
+  .hpoint = 0
 };
 
-extern QueueHandle_t xQueueIdle;
-extern QueueHandle_t xQueueView;
+void led_init() noexcept {
+  if (LED != NULL) {
+    ledc_timer_config(&_timer_config);
+    ledc_channel_config(&_channel_config);
+  }
+}
 
-extern uint32_t d048, e048;
-extern uint32_t d139, e139;
-extern uint32_t d174, e174;
-extern uint32_t d390, e390;
+void led_off() noexcept {
+  if (LED != NULL) {
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+  }
+}
 
-
-bool can_install() noexcept;
-bool can_start() noexcept;
-esp_err_t can_transmit(const twai_message_t *, TickType_t);
-
-#endif /* __CAN_DRIVER_HPP__ */
+void led_on() noexcept {
+  if (LED != NULL) {
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 8191 /* 13-bit max */);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+  }
+}

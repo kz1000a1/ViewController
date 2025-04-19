@@ -20,27 +20,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef __CAN_DRIVER_HPP__
-#define __CAN_DRIVER_HPP__
-
-#include "hardware.h"
-
-struct frame {
-  uint32_t id;      //!< PID
-  uint8_t data[8];  //!< payload byte access
-};
-
-extern QueueHandle_t xQueueIdle;
-extern QueueHandle_t xQueueView;
-
-extern uint32_t d048, e048;
-extern uint32_t d139, e139;
-extern uint32_t d174, e174;
-extern uint32_t d390, e390;
-
-
-bool can_install() noexcept;
-bool can_start() noexcept;
-esp_err_t can_transmit(const twai_message_t *, TickType_t);
-
-#endif /* __CAN_DRIVER_HPP__ */
+// ESP32 Dev Module
+#if defined(ARDUINO_ESP32_DEV)
+#define RELAY0 GPIO_NUM_16
+#define LED GPIO_NUM_23
+#define CAN_RX_PIN GPIO_NUM_26
+#define CAN_TX_PIN GPIO_NUM_25
+#endif

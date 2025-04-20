@@ -20,8 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef __CAN_DRIVER_HPP__
-#define __CAN_DRIVER_HPP__
+#pragma once
 
 #include "hardware.h"
 
@@ -42,5 +41,3 @@ extern uint32_t d390, e390;
 bool can_install() noexcept;
 bool can_start() noexcept;
 esp_err_t can_transmit(const twai_message_t *, TickType_t);
-
-#endif /* __CAN_DRIVER_HPP__ */

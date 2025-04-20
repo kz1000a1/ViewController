@@ -51,6 +51,8 @@ static uint32_t d139_1 = 0;
 static uint32_t d174_1 = 0;
 static uint32_t d390_1 = 0;
 
+static bool VIEW_ENABLE = false;
+
 void print_frame(frame* twai_frame) {
   uint32_t CurrentTime;
 
@@ -161,6 +163,16 @@ void setup() {
   // GPIO Pin
   pinMode(RELAY0, OUTPUT);
   digitalWrite(RELAY0, LOW);
+  pinMode(MODE, INPUT_PULLUP);
+  VIEW_ENABLE = (bool)digitalRead(MODE);
+
+  if (DebugMode == DEBUG) {
+    if (VIEW_ENABLE) {
+      Serial.println("Enable Auto View Mode.");
+    } else {
+      Serial.println("Disabe Auto View Mode.");
+    }
+  }
 
   led_init();
 
@@ -259,7 +271,7 @@ void core0task(void*) {
         }
       } while (uxQueueMessagesWaiting(xQueueView) != 0);
 
-      if (DebugMode != CANDUMP) {
+      if (DebugMode != CANDUMP && VIEW_ENABLE) {
         switch (view_frame.id) {
           case CAN_ID_SHIFT:  // 0x048
             PrevShift = Shift;

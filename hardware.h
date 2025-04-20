@@ -22,8 +22,9 @@
 
 // ESP32 Dev Module
 #if defined(ARDUINO_ESP32_DEV)
-#define RELAY0 GPIO_NUM_16
-#define LED GPIO_NUM_23
 #define CAN_RX_PIN GPIO_NUM_26
 #define CAN_TX_PIN GPIO_NUM_25
+#define RELAY0 GPIO_NUM_16
+#define LED GPIO_NUM_23
+#define MODE GPIO_NUM_19
 #endif

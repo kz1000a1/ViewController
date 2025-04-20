@@ -20,8 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef __SUBARU_LEVORG_VNX_H__
-#define __SUBARU_LEVORG_VNX_H__
+#pragma once
 
 /* #define DEBUG_MODE */
 
@@ -77,4 +76,3 @@ extern enum debug_mode DebugMode;
 
 #define MAX_RETRY 2
 
-#endif /* __SUBARU_LEVORG_VNX_H_ */

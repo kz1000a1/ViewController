@@ -41,21 +41,21 @@ ledc_channel_config_t _channel_config = {
   .hpoint = 0
 };
 
-void led_init() noexcept {
+void raw_led_init() noexcept {
   if (LED != NULL) {
     ledc_timer_config(&_timer_config);
     ledc_channel_config(&_channel_config);
   }
 }
 
-void led_off() noexcept {
+void raw_led_off() noexcept {
   if (LED != NULL) {
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
   }
 }
 
-void led_on() noexcept {
+void raw_led_on() noexcept {
   if (LED != NULL) {
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 8191 /* 13-bit max */);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);

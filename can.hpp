@@ -29,14 +29,25 @@ struct frame {
   uint8_t data[8];  //!< payload byte access
 };
 
+struct stats {
+  uint32_t id048;
+  uint32_t id139;
+  uint32_t id174;
+  uint32_t id390;
+};
+
 extern QueueHandle_t xQueueIdle;
 extern QueueHandle_t xQueueView;
 
-extern uint32_t d048, e048;
-extern uint32_t d139, e139;
-extern uint32_t d174, e174;
-extern uint32_t d390, e390;
+struct struct_stats {
+  struct stats pass;
+  union {
+    struct stats error;
+    struct stats discard;
+  };
+};
 
+extern struct struct_stats driver;
 
 bool can_install() noexcept;
 bool can_start() noexcept;

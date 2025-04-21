@@ -22,38 +22,30 @@
 
 #include "driver/twai.h"
 #include "subaru_levorg_vnx.h"
-#include "can_driver.hpp"
+#include "can.hpp"
 #include "led.hpp"
 
-enum debug_mode DebugMode = DEBUG; // NORMAL or DEBUG or CANDUMP
+enum debug_mode DebugMode = DEBUG;  // NORMAL or DEBUG or CANDUMP
 
 static bool driver_installed = false;
 TaskHandle_t Core0Handle = NULL;
 TaskHandle_t Core1Handle = NULL;
 
-static uint32_t c048_0 = 0;
-static uint32_t c139_0 = 0;
-static uint32_t c174_0 = 0;
-static uint32_t c390_0 = 0;
-
-static uint32_t d048_0 = 0;
-static uint32_t d139_0 = 0;
-static uint32_t d174_0 = 0;
-static uint32_t d390_0 = 0;
-
-static uint32_t c048_1 = 0;
-static uint32_t c139_1 = 0;
-static uint32_t c174_1 = 0;
-static uint32_t c390_1 = 0;
-
-static uint32_t d048_1 = 0;
-static uint32_t d139_1 = 0;
-static uint32_t d174_1 = 0;
-static uint32_t d390_1 = 0;
+static struct struct_stats core[2] = { 0, 0, 0, 0, 0, 0, 0, 0,
+                                       0, 0, 0, 0, 0, 0, 0, 0 };
 
 static bool VIEW_ENABLE = false;
 
-void print_frame(frame* twai_frame) {
+static bool View = OFF;
+static bool P = OFF;
+static uint8_t Shift = SHIFT_P;
+static uint8_t PrevShift = SHIFT_P;
+static float Speed = 0.0;
+static float PrevSpeed = 0.0;
+static bool ParkBrake = ON;
+static bool PrevParkBrake = ON;
+
+void print_frame(frame* can_frame) {
   uint32_t CurrentTime;
 
   CurrentTime = micros();
@@ -61,96 +53,133 @@ void print_frame(frame* twai_frame) {
   // Output all received message(s) to CDC port as candump -L
   Serial.printf("(%d.%06d) can0 %03X#", CurrentTime / 1000000,
                 CurrentTime % 1000000,
-                twai_frame->id);
+                can_frame->id);
   for (uint8_t i = 0; i < 8; i++) {
-    Serial.printf("%02X", twai_frame->data[i]);
+    Serial.printf("%02X", can_frame->data[i]);
   }
   Serial.printf("\n");
 }
 
+void print_message(twai_message_t* can_message) {
+  uint32_t CurrentTime;
+
+  CurrentTime = micros();
+
+  // Output all received message(s) to CDC port as candump -L
+  Serial.printf("(%d.%06d) can0 %03X#", CurrentTime / 1000000,
+                CurrentTime % 1000000,
+                can_message->identifier);
+  for (uint8_t i = 0; i < 8; i++) {
+    Serial.printf("%02X", can_message->data[i]);
+  }
+  Serial.printf("\n");
+}
+
+void get_frame(QueueHandle_t xQueue, frame* can_frame) {
+  struct_stats* stats = &core[xPortGetCoreID()];
+  do {
+    xQueueReceive(xQueue, can_frame, 0);
+    if (DebugMode == CANDUMP) {
+      print_frame(can_frame);
+    }
+    if (DebugMode == DEBUG) {
+      switch (can_frame->id) {
+        case CAN_ID_SHIFT:  // 0x048
+          stats->discard.id048++;
+          break;
+
+        case CAN_ID_SPEED:  // 0x139
+          stats->discard.id139++;
+          break;
+
+        case CAN_ID_TCU:  // 0x174
+          stats->discard.id174++;
+          break;
+
+        case CAN_ID_CCU:  // 0x390
+          stats->discard.id390++;
+          break;
+
+        default:  // Unexpected can id
+          // Output Warning message
+          Serial.printf("# Core%d: Unexpected can id (0x%03x).\n", xPortGetCoreID(), can_frame->id);
+          break;
+      }
+    }
+  } while (uxQueueMessagesWaiting(xQueue) != 0);
+}
+
+void purge_queue(QueueHandle_t xQueue, frame* can_frame) {
+  if (DebugMode == DEBUG) {
+    get_frame(xQueue, can_frame);
+  } else {
+    xQueueReset(xQueue);
+  }
+}
 
 void send_cancel_frame(frame* rx_frame) {
   // Storage for transmit message buffer
-  twai_message_t tx_frame;
+  twai_message_t tx_message;
   frame print_frame;
-  tx_frame.identifier = CAN_ID_CCU;
-  tx_frame.data_length_code = 8;
-  tx_frame.rtr = 0;
-  tx_frame.extd = 0;
-  tx_frame.ss = 1;
-  tx_frame.self = 0;
-  tx_frame.dlc_non_comp = 0;
+  tx_message.identifier = CAN_ID_CCU;
+  tx_message.data_length_code = 8;
+  tx_message.rtr = 0;
+  tx_message.extd = 0;
+  tx_message.ss = 1;
+  tx_message.self = 0;
+  tx_message.dlc_non_comp = 0;
 
   if ((rx_frame->data[1] & 0x0f) == 0x0f) {
-    tx_frame.data[1] = rx_frame->data[1] & 0xf0;
+    tx_message.data[1] = rx_frame->data[1] & 0xf0;
   } else {
-    tx_frame.data[1] = rx_frame->data[1] + 0x01;
+    tx_message.data[1] = rx_frame->data[1] + 0x01;
   }
-  tx_frame.data[2] = rx_frame->data[2];
-  tx_frame.data[3] = rx_frame->data[3];
-  tx_frame.data[4] = rx_frame->data[4];
-  tx_frame.data[5] = rx_frame->data[5];
-  tx_frame.data[6] = rx_frame->data[6] | 0x40;  // Eliminate engine auto stop bit on
-  tx_frame.data[7] = rx_frame->data[7];
+  tx_message.data[2] = rx_frame->data[2];
+  tx_message.data[3] = rx_frame->data[3];
+  tx_message.data[4] = rx_frame->data[4];
+  tx_message.data[5] = rx_frame->data[5];
+  tx_message.data[6] = rx_frame->data[6] | 0x40;  // Eliminate engine auto stop bit on
+  tx_message.data[7] = rx_frame->data[7];
   // Calculate checksum
-  tx_frame.data[0] = (tx_frame.data[1] + tx_frame.data[2] + tx_frame.data[3] + tx_frame.data[4] + tx_frame.data[5] + tx_frame.data[6] + tx_frame.data[7]) % SUM_CHECK_DIVIDER;
-  if (can_transmit(&tx_frame, pdMS_TO_TICKS(1000)) != ESP_OK) {
+  tx_message.data[0] = (tx_message.data[1] + tx_message.data[2] + tx_message.data[3] + tx_message.data[4] + tx_message.data[5] + tx_message.data[6] + tx_message.data[7]) % SUM_CHECK_DIVIDER;
+  if (can_transmit(&tx_message, pdMS_TO_TICKS(1000)) != ESP_OK) {
     if (DebugMode == DEBUG) {
       Serial.printf("# Error: Failed to queue message for transmission\n");
     }
   }
   if (DebugMode == DEBUG) {
     Serial.printf("# ");
-    uint32_t CurrentTime;
+    print_message(&tx_message);
+  }
+}
 
-    CurrentTime = micros();
+void led_on() {
+  raw_led_on();
 
-    // Output all received message(s) to CDC port as candump -L
-    Serial.printf("(%d.%06d) can0 %03X#", CurrentTime / 1000000,
-                  CurrentTime % 1000000,
-                  tx_frame.identifier);
-    for (uint8_t i = 0; i < 8; i++) {
-      Serial.printf("%02X", tx_frame.data[i]);
-    }
-    Serial.printf("\n");
+  if (DebugMode == DEBUG) {
+    Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
+  }
+}
+
+void led_off() {
+  raw_led_off();
+
+  if (DebugMode == DEBUG) {
+    Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
   }
 }
 
 void view_on() {
+  led_on();
   digitalWrite(RELAY0, HIGH);
   delay(100);
   digitalWrite(RELAY0, LOW);
+  View = true;
+}
 
-  if (DebugMode == DEBUG) {
-    frame view_frame;
-    while (uxQueueMessagesWaiting(xQueueView) != 0) {
-      xQueueReceive(xQueueView, &view_frame, 0);
-      switch (view_frame.id) {
-        case CAN_ID_SHIFT:  // 0x048
-          d048_0++;
-          break;
-
-        case CAN_ID_SPEED:  // 0x139
-          d139_0++;
-          break;
-
-        case CAN_ID_TCU:  // 0x174
-          d174_0++;
-          break;
-
-        case CAN_ID_CCU:  // 0x390
-          d390_0++;
-          break;
-
-        default:  // Unexpected can id
-          // Output Warning message
-          Serial.printf("# Core0: Unexpected can id (0x%03x).\n", view_frame.id);
-          break;
-      }
-    }
-  } else {
-    xQueueReset(xQueueView);
-  }
+void view_off() {
+  led_off;
+  View = false;
 }
 
 void setup() {
@@ -174,7 +203,7 @@ void setup() {
     }
   }
 
-  led_init();
+  raw_led_init();
 
   can_install();
   can_start();
@@ -204,15 +233,6 @@ void setup() {
 void core0task(void*) {
   frame view_frame;
 
-  static bool View = OFF;
-  static bool P = OFF;
-  static uint8_t Shift = SHIFT_P;
-  static uint8_t PrevShift = SHIFT_P;
-  static float Speed = 0.0;
-  static float PrevSpeed = 0.0;
-  static bool ParkBrake = ON;
-  static bool PrevParkBrake = ON;
-
   while (1) {
     if (!driver_installed) {
       // Driver not installed
@@ -223,6 +243,8 @@ void core0task(void*) {
     // If CAN message receive is pending, process the message
     if (uxQueueMessagesWaiting(xQueueView) != 0) {
       // One or more messages received. Handle all.
+      get_frame(xQueueView, &view_frame);
+      /*
       do {
         xQueueReceive(xQueueView, &view_frame, 0);
         if (DebugMode == CANDUMP) {
@@ -233,33 +255,33 @@ void core0task(void*) {
           switch (view_frame.id) {
             case CAN_ID_SHIFT:  // 0x048
               if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                d048_0++;
+                core[0].discard.id048++;
               } else {
-                c048_0++;
+                core[0].pass.id048++;
               }
               break;
 
             case CAN_ID_SPEED:  // 0x139
               if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                d139_0++;
+                core[0].discard.id139++;
               } else {
-                c139_0++;
+                core[0].pass.id139++;
               }
               break;
 
             case CAN_ID_TCU:  // 0x174
               if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                d174_0++;
+                core[0].discard.id174++;
               } else {
-                c174_0++;
+                core[0].pass.id174++;
               }
               break;
 
             case CAN_ID_CCU:  // 0x390
               if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                d390_0++;
+                core[0].discard.id390++;
               } else {
-                c390_0++;
+                core[0].pass.id390++;
               }
               break;
 
@@ -270,6 +292,7 @@ void core0task(void*) {
           }
         }
       } while (uxQueueMessagesWaiting(xQueueView) != 0);
+*/
 
       if (DebugMode != CANDUMP && VIEW_ENABLE) {
         switch (view_frame.id) {
@@ -279,24 +302,16 @@ void core0task(void*) {
             switch (Shift) {
               case SHIFT_P:
                 if (View == ON) {
-                  if (DebugMode == DEBUG) {
-                    Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-                  }
+                  view_off();
                   P = ON;
-                  View = OFF;
-                  led_off();
                 }
                 break;
 
               case SHIFT_D:
                 if (PrevShift != SHIFT_D && P == ON && ParkBrake == OFF && Speed <= 15.0 && View == OFF) {
-                  if (DebugMode == DEBUG) {
-                    Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-                  }
                   view_on();
-                  led_on();
+                  purge_queue(xQueueView, &view_frame);
                   P = OFF;
-                  View = ON;
                 }
                 break;
 
@@ -314,11 +329,7 @@ void core0task(void*) {
 
             if (ParkBrake == ON) {
               if (View == ON) {
-                if (DebugMode == DEBUG) {
-                  Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-                }
-                led_off();
-                View = OFF;
+                view_off();
                 P = ON;
               }
             } else {
@@ -326,30 +337,18 @@ void core0task(void*) {
                 if (View == OFF) {
                   if (Speed <= 15.0) {
                     if (PrevParkBrake != OFF) {
-                      if (DebugMode == DEBUG) {
-                        Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-                      }
                       view_on();
-                      led_on();
+                      purge_queue(xQueueView, &view_frame);
                       P = OFF;
-                      View = ON;
                     }
                     if (15.0 < PrevSpeed) {
-                      if (DebugMode == DEBUG) {
-                        Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-                      }
                       view_on();
-                      led_on();
-                      View = ON;
+                      purge_queue(xQueueView, &view_frame);
                     }
                   }
                 } else {
                   if (20.0 <= Speed) {
-                    if (DebugMode == DEBUG) {
-                      Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-                    }
-                    led_off();
-                    View = OFF;
+                    view_off();
                   }
                 }
               }
@@ -388,6 +387,8 @@ void core1task(void*) {
 
     // If CAN message receive is pending, process the message
     if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
+      get_frame(xQueueIdle, &idle_frame);
+      /*
       // One or more messages received. Handle all.
       do {
         xQueueReceive(xQueueIdle, &idle_frame, 0);
@@ -396,33 +397,33 @@ void core1task(void*) {
           switch (idle_frame.id) {
             case CAN_ID_TCU:  // 0x174
               if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                d174_1++;
+                core[1].discard.id174++;
               } else {
-                c174_1++;
+                core[1].pass.id174++;
               }
               break;
 
             case CAN_ID_CCU:  // 0x390
               if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                d390_1++;
+                core[1].discard.id390++;
               } else {
-                c390_1++;
+                core[1].pass.id390++;
               }
               break;
 
             case CAN_ID_SHIFT:  // 0x048
               if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                d048_1++;
+                core[0].pass.id048++;
               } else {
-                c048_1++;
+                core[1].pass.id048++;
               }
               break;
 
             case CAN_ID_SPEED:  // 0x139
               if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                d139_1++;
+                core[1].discard.id139++;
               } else {
-                c139_1++;
+                core[1].pass.id139++;
               }
               break;
 
@@ -433,6 +434,7 @@ void core1task(void*) {
           }
         }
       } while (uxQueueMessagesWaiting(xQueueIdle) != 0);
+*/
 
       if (DebugMode != CANDUMP) {
         switch (idle_frame.id) {
@@ -495,25 +497,27 @@ void core1task(void*) {
                           // delay(50); // 50ms delay like real CCU
                           delay(50 / 2);
                           send_cancel_frame(&idle_frame);  // Transmit message
-                          // Discard message(s) that received during HAL_delay()
+                          // Discard message(s) that received during HAL_delay(
+                          purge_queue(xQueueIdle, &idle_frame);
+                          /*
                           if (DebugMode == DEBUG) {
                             while (uxQueueMessagesWaiting(xQueueIdle) != 0) {
                               xQueueReceive(xQueueIdle, &idle_frame, 0);
                               switch (idle_frame.id) {
                                 case CAN_ID_TCU:  // 0x174
-                                  d174_1++;
+                                  core[1].discard.id174++;
                                   break;
 
                                 case CAN_ID_CCU:  // 0x390
-                                  d390_1++;
+                                  core[1].discard.id390++;
                                   break;
 
                                 case CAN_ID_SHIFT:  // 0x048
-                                  d048_1++;
+                                  core[0].pass.id048++;
                                   break;
 
                                 case CAN_ID_SPEED:  // 0x139
-                                  d139_1++;
+                                  core[1].discard.id139++;
                                   break;
 
                                 default:  // Unexpected can id
@@ -522,9 +526,12 @@ void core1task(void*) {
                                   break;
                               }
                             }
-                            idle_frame.id = CAN_ID_TCU;
                           } else {
                             xQueueReset(xQueueIdle);
+                          }
+*/
+                          if (DebugMode == DEBUG) {
+                            idle_frame.id = CAN_ID_TCU;
                           }
                           CcuStatus = PAUSE;
                         }
@@ -568,10 +575,10 @@ void loop() {
     Serial.println("        |-----------+-----------+-----------+-----------|   Total   |    Pass   |   Error   |   Total   |");
     Serial.println("        |  Receive  |  Discard  |  Receive  |  Discard  |           |           |           |           |");
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
-    Serial.printf("  0x048 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", c048_0, d048_0, c048_1, d048_1, c048_0 + d048_0 + c048_1 + d048_1, d048, e048, e048 + d048, c048_0 + d048_0 + c048_1 + d048_1 - d048);
-    Serial.printf("  0x139 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", c139_0, d139_0, c139_1, d139_1, c139_0 + d139_0 + c139_1 + d139_1, d139, e139, e139 + d139, c139_0 + d139_0 + c139_1 + d139_1 - d139);
-    Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", c174_0, d174_0, c174_1, d174_1, c174_0 + d174_0 + c174_1 + d174_1, d174, e174, e174 + d174, c174_0 + d174_0 + c174_1 + d174_1 - d174);
-    Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", c390_0, d390_0, c390_1, d390_1, c390_0 + d390_0 + c390_1 + d390_1, d390, e390, e390 + d390, c390_0 + d390_0 + c390_1 + d390_1 - d390);
+    Serial.printf("  0x048 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id048, core[0].discard.id048, core[1].pass.id048, core[0].pass.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[0].pass.id048, driver.pass.id048, driver.error.id048, driver.error.id048 + driver.pass.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[0].pass.id048 - driver.pass.id048);
+    Serial.printf("  0x139 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id139, core[0].discard.id139, core[1].pass.id139, core[1].discard.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139, driver.pass.id139, driver.error.id139, driver.error.id139 + driver.pass.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139 - driver.pass.id139);
+    Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id174, core[0].discard.id174, core[1].pass.id174, core[1].discard.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, driver.pass.id174, driver.pass.id174, driver.pass.id174 + driver.pass.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174 - driver.pass.id174);
+    Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id390, core[0].discard.id390, core[1].pass.id390, core[1].discard.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390, driver.pass.id390, driver.error.id390, driver.error.id390 + driver.pass.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390 - driver.pass.id390);
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
     Serial.println("");
   }

@@ -35,7 +35,7 @@
 #include <utility>
 
 #include "subaru_levorg_vnx.h"
-#include "can_driver.hpp"
+#include "can.hpp"
 
 union frame_info {
   uint8_t u8;
@@ -63,14 +63,7 @@ static constexpr uint32_t _queue_item_size = sizeof(frame);
 uint8_t _queue_storage_idle[_queue_length * _queue_item_size];
 uint8_t _queue_storage_view[_queue_length * _queue_item_size];
 
-uint32_t d048 = 0;
-uint32_t e048 = 0;
-uint32_t d139 = 0;
-uint32_t e139 = 0;
-uint32_t d174 = 0;
-uint32_t e174 = 0;
-uint32_t d390 = 0;
-uint32_t e390 = 0;
+struct struct_stats driver = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 /*
  * ESP32 CAN controller:
@@ -144,9 +137,9 @@ void isr() noexcept {
               xQueueSendToBackFromISR(xQueueView, &f, &task_woken);
             } else {
               if (xQueueSendToBackFromISR(xQueueView, &f, &task_woken) == pdPASS) {
-                d048++;
+                driver.pass.id048++;
               } else {
-                e048++;
+                driver.error.id048++;
               }
             }
             break;
@@ -156,9 +149,9 @@ void isr() noexcept {
               xQueueSendToBackFromISR(xQueueView, &f, &task_woken);
             } else {
               if (xQueueSendToBackFromISR(xQueueView, &f, &task_woken) == pdPASS) {
-                d139++;
+                driver.pass.id139++;
               } else {
-                e139++;
+                driver.error.id139++;
               }
             }
             break;
@@ -168,9 +161,9 @@ void isr() noexcept {
               xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken);
             } else {
               if (xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken) == pdPASS) {
-                d174++;
+                driver.pass.id174++;
               } else {
-                e174++;
+                driver.error.id174++;
               }
             }
             break;
@@ -180,9 +173,9 @@ void isr() noexcept {
               xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken);
             } else {
               if (xQueueSendToBackFromISR(xQueueIdle, &f, &task_woken) == pdPASS) {
-                d390++;
+                driver.pass.id390++;
               } else {
-                e390++;
+                driver.error.id390++;
               }
             }
             break;

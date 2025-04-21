@@ -28,14 +28,14 @@
 /**
  * Initialize LEDC
  */
-void led_init() noexcept;
+void raw_led_init() noexcept;
 
 /**
  * Turn on built-in LED
  */
-void led_on() noexcept;
+void raw_led_on() noexcept;
 
 /**
  * Turn off built-in LED
  */
-void led_off() noexcept;
+void raw_led_off() noexcept;

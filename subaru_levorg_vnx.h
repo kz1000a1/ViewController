@@ -75,4 +75,3 @@ extern enum debug_mode DebugMode;
 #define SUM_CHECK_DIVIDER 365
 
 #define MAX_RETRY 2
-

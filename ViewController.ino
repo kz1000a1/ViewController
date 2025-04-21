@@ -76,28 +76,35 @@ void print_message(twai_message_t* can_message) {
 }
 
 void get_frame(QueueHandle_t xQueue, frame* can_frame) {
-  struct_stats* stats = &core[xPortGetCoreID()];
+  bool queue_not_empty = false;
+  struct stats* stats = &core[xPortGetCoreID()].discard;
   do {
     xQueueReceive(xQueue, can_frame, 0);
+    queue_not_empty = (uxQueueMessagesWaiting(xQueue) != 0);
     if (DebugMode == CANDUMP) {
       print_frame(can_frame);
     }
+
     if (DebugMode == DEBUG) {
+      if (queue_not_empty == false) {
+        stats = &core[xPortGetCoreID()].pass;
+      }
+
       switch (can_frame->id) {
         case CAN_ID_SHIFT:  // 0x048
-          stats->discard.id048++;
+          stats->id048++;
           break;
 
         case CAN_ID_SPEED:  // 0x139
-          stats->discard.id139++;
+          stats->id139++;
           break;
 
         case CAN_ID_TCU:  // 0x174
-          stats->discard.id174++;
+          stats->id174++;
           break;
 
         case CAN_ID_CCU:  // 0x390
-          stats->discard.id390++;
+          stats->id390++;
           break;
 
         default:  // Unexpected can id
@@ -106,14 +113,47 @@ void get_frame(QueueHandle_t xQueue, frame* can_frame) {
           break;
       }
     }
-  } while (uxQueueMessagesWaiting(xQueue) != 0);
+  } while (queue_not_empty);
 }
 
 void purge_queue(QueueHandle_t xQueue, frame* can_frame) {
-  if (DebugMode == DEBUG) {
-    get_frame(xQueue, can_frame);
-  } else {
-    xQueueReset(xQueue);
+  struct stats* stats = &core[xPortGetCoreID()].discard;
+  if (uxQueueMessagesWaiting(xQueue) != 0) {
+    if (DebugMode == NORMAL) {
+      xQueueReset(xQueue);
+    } else {
+      do {
+        xQueueReceive(xQueue, can_frame, 0);
+        if (DebugMode == CANDUMP) {
+          print_frame(can_frame);
+        }
+
+        if (DebugMode == DEBUG) {
+          switch (can_frame->id) {
+            case CAN_ID_SHIFT:  // 0x048
+              stats->id048++;
+              break;
+
+            case CAN_ID_SPEED:  // 0x139
+              stats->id139++;
+              break;
+
+            case CAN_ID_TCU:  // 0x174
+              stats->id174++;
+              break;
+
+            case CAN_ID_CCU:  // 0x390
+              stats->id390++;
+              break;
+
+            default:  // Unexpected can id
+              // Output Warning message
+              Serial.printf("# Core%d: Unexpected can id (0x%03x).\n", xPortGetCoreID(), can_frame->id);
+              break;
+          }
+        }
+      } while (uxQueueMessagesWaiting(xQueue) != 0);
+    }
   }
 }
 
@@ -174,12 +214,12 @@ void view_on() {
   digitalWrite(RELAY0, HIGH);
   delay(100);
   digitalWrite(RELAY0, LOW);
-  View = true;
+  View = ON;
 }
 
 void view_off() {
-  led_off;
-  View = false;
+  led_off();
+  View = OFF;
 }
 
 void setup() {
@@ -571,13 +611,13 @@ void loop() {
     Serial.println("--------+-----------------------------------------------------------+-----------------------------------+------------");
     Serial.println("        |                           Task                            |              Driver               |");
     Serial.println("        |-----------------------+-----------------------+-----------+-----------+-----------+-----------|");
-    Serial.println(" CAN ID |         Core0         |         Core1         |           |           |           |           |   Diff");
+    Serial.println(" CAN ID |         Core0         |         Core1         |           |           |           |           |    Diff");
     Serial.println("        |-----------+-----------+-----------+-----------|   Total   |    Pass   |   Error   |   Total   |");
     Serial.println("        |  Receive  |  Discard  |  Receive  |  Discard  |           |           |           |           |");
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
-    Serial.printf("  0x048 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id048, core[0].discard.id048, core[1].pass.id048, core[0].pass.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[0].pass.id048, driver.pass.id048, driver.error.id048, driver.error.id048 + driver.pass.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[0].pass.id048 - driver.pass.id048);
+    Serial.printf("  0x048 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id048, core[0].discard.id048, core[1].pass.id048, core[1].discard.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048, driver.pass.id048, driver.error.id048, driver.error.id048 + driver.pass.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048 - driver.pass.id048);
     Serial.printf("  0x139 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id139, core[0].discard.id139, core[1].pass.id139, core[1].discard.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139, driver.pass.id139, driver.error.id139, driver.error.id139 + driver.pass.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139 - driver.pass.id139);
-    Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id174, core[0].discard.id174, core[1].pass.id174, core[1].discard.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, driver.pass.id174, driver.pass.id174, driver.pass.id174 + driver.pass.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174 - driver.pass.id174);
+    Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id174, core[0].discard.id174, core[1].pass.id174, core[1].discard.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, driver.pass.id174, driver.error.id174, driver.error.id174 + driver.pass.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174 - driver.pass.id174);
     Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id390, core[0].discard.id390, core[1].pass.id390, core[1].discard.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390, driver.pass.id390, driver.error.id390, driver.error.id390 + driver.pass.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390 - driver.pass.id390);
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
     Serial.println("");

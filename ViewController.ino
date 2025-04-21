@@ -284,55 +284,6 @@ void core0task(void*) {
     if (uxQueueMessagesWaiting(xQueueView) != 0) {
       // One or more messages received. Handle all.
       get_frame(xQueueView, &view_frame);
-      /*
-      do {
-        xQueueReceive(xQueueView, &view_frame, 0);
-        if (DebugMode == CANDUMP) {
-          print_frame(&view_frame);
-        }
-
-        if (DebugMode == DEBUG) {
-          switch (view_frame.id) {
-            case CAN_ID_SHIFT:  // 0x048
-              if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                core[0].discard.id048++;
-              } else {
-                core[0].pass.id048++;
-              }
-              break;
-
-            case CAN_ID_SPEED:  // 0x139
-              if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                core[0].discard.id139++;
-              } else {
-                core[0].pass.id139++;
-              }
-              break;
-
-            case CAN_ID_TCU:  // 0x174
-              if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                core[0].discard.id174++;
-              } else {
-                core[0].pass.id174++;
-              }
-              break;
-
-            case CAN_ID_CCU:  // 0x390
-              if (uxQueueMessagesWaiting(xQueueView) != 0) {
-                core[0].discard.id390++;
-              } else {
-                core[0].pass.id390++;
-              }
-              break;
-
-            default:  // Unexpected can id
-              // Output Warning message
-              Serial.printf("# Core0: Unexpected can id (0x%03x).\n", view_frame.id);
-              break;
-          }
-        }
-      } while (uxQueueMessagesWaiting(xQueueView) != 0);
-*/
 
       if (DebugMode != CANDUMP && VIEW_ENABLE) {
         switch (view_frame.id) {
@@ -428,53 +379,6 @@ void core1task(void*) {
     // If CAN message receive is pending, process the message
     if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
       get_frame(xQueueIdle, &idle_frame);
-      /*
-      // One or more messages received. Handle all.
-      do {
-        xQueueReceive(xQueueIdle, &idle_frame, 0);
-
-        if (DebugMode == DEBUG) {
-          switch (idle_frame.id) {
-            case CAN_ID_TCU:  // 0x174
-              if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                core[1].discard.id174++;
-              } else {
-                core[1].pass.id174++;
-              }
-              break;
-
-            case CAN_ID_CCU:  // 0x390
-              if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                core[1].discard.id390++;
-              } else {
-                core[1].pass.id390++;
-              }
-              break;
-
-            case CAN_ID_SHIFT:  // 0x048
-              if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                core[0].pass.id048++;
-              } else {
-                core[1].pass.id048++;
-              }
-              break;
-
-            case CAN_ID_SPEED:  // 0x139
-              if (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                core[1].discard.id139++;
-              } else {
-                core[1].pass.id139++;
-              }
-              break;
-
-            default:  // Unexpected can id
-              // Output Warning message
-              Serial.printf("# Core1: Unexpected can id (0x%03x).\n", idle_frame.id);
-              break;
-          }
-        }
-      } while (uxQueueMessagesWaiting(xQueueIdle) != 0);
-*/
 
       if (DebugMode != CANDUMP) {
         switch (idle_frame.id) {
@@ -539,37 +443,7 @@ void core1task(void*) {
                           send_cancel_frame(&idle_frame);  // Transmit message
                           // Discard message(s) that received during HAL_delay(
                           purge_queue(xQueueIdle, &idle_frame);
-                          /*
-                          if (DebugMode == DEBUG) {
-                            while (uxQueueMessagesWaiting(xQueueIdle) != 0) {
-                              xQueueReceive(xQueueIdle, &idle_frame, 0);
-                              switch (idle_frame.id) {
-                                case CAN_ID_TCU:  // 0x174
-                                  core[1].discard.id174++;
-                                  break;
 
-                                case CAN_ID_CCU:  // 0x390
-                                  core[1].discard.id390++;
-                                  break;
-
-                                case CAN_ID_SHIFT:  // 0x048
-                                  core[0].pass.id048++;
-                                  break;
-
-                                case CAN_ID_SPEED:  // 0x139
-                                  core[1].discard.id139++;
-                                  break;
-
-                                default:  // Unexpected can id
-                                  // Output Warning message
-                                  Serial.printf("# Core1: Unexpected can id (0x%03x).\n", idle_frame.id);
-                                  break;
-                              }
-                            }
-                          } else {
-                            xQueueReset(xQueueIdle);
-                          }
-*/
                           if (DebugMode == DEBUG) {
                             idle_frame.id = CAN_ID_TCU;
                           }

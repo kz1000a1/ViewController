@@ -116,20 +116,21 @@ void get_frame(QueueHandle_t xQueue, frame* can_frame) {
   } while (queue_not_empty);
 }
 
-void purge_queue(QueueHandle_t xQueue, frame* can_frame) {
+void purge_queue(QueueHandle_t xQueue) {
+  frame can_frame;
   struct stats* stats = &core[xPortGetCoreID()].discard;
   if (uxQueueMessagesWaiting(xQueue) != 0) {
     if (DebugMode == NORMAL) {
       xQueueReset(xQueue);
     } else {
       do {
-        xQueueReceive(xQueue, can_frame, 0);
+        xQueueReceive(xQueue, &can_frame, 0);
         if (DebugMode == CANDUMP) {
-          print_frame(can_frame);
+          print_frame(&can_frame);
         }
 
         if (DebugMode == DEBUG) {
-          switch (can_frame->id) {
+          switch (can_frame.id) {
             case CAN_ID_SHIFT:  // 0x048
               stats->id048++;
               break;
@@ -301,7 +302,7 @@ void core0task(void*) {
               case SHIFT_D:
                 if (PrevShift != SHIFT_D && P == ON && ParkBrake == OFF && Speed <= 15.0 && View == OFF) {
                   view_on();
-                  purge_queue(xQueueView, &view_frame);
+                  purge_queue(xQueueView);
                   P = OFF;
                 }
                 break;
@@ -329,12 +330,12 @@ void core0task(void*) {
                   if (Speed <= 15.0) {
                     if (PrevParkBrake != OFF) {
                       view_on();
-                      purge_queue(xQueueView, &view_frame);
+                      purge_queue(xQueueView);
                       P = OFF;
                     }
                     if (15.0 < PrevSpeed) {
                       view_on();
-                      purge_queue(xQueueView, &view_frame);
+                      purge_queue(xQueueView);
                     }
                   }
                 } else {
@@ -442,11 +443,7 @@ void core1task(void*) {
                           delay(50 / 2);
                           send_cancel_frame(&idle_frame);  // Transmit message
                           // Discard message(s) that received during HAL_delay(
-                          purge_queue(xQueueIdle, &idle_frame);
-
-                          if (DebugMode == DEBUG) {
-                            idle_frame.id = CAN_ID_TCU;
-                          }
+                          purge_queue(xQueueIdle);
                           CcuStatus = PAUSE;
                         }
                       }

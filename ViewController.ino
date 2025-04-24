@@ -212,7 +212,7 @@ void led_off() {
 void view_on() {
   led_on();
   digitalWrite(RELAY0, HIGH);
-  delay(100);
+  delay(500);
   digitalWrite(RELAY0, LOW);
   View = ON;
 }

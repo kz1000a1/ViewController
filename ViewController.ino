@@ -194,32 +194,25 @@ void send_cancel_frame(frame* rx_frame) {
   }
 }
 
-void led_on() {
-  raw_led_on();
-
+void view_on() {
+  led_on();
   if (DebugMode == DEBUG) {
     Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
   }
-}
 
-void led_off() {
-  raw_led_off();
-
-  if (DebugMode == DEBUG) {
-    Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-  }
-}
-
-void view_on() {
-  led_on();
   digitalWrite(RELAY0, HIGH);
   delay(500);
   digitalWrite(RELAY0, LOW);
+
   View = ON;
 }
 
 void view_off() {
   led_off();
+  if (DebugMode == DEBUG) {
+    Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
+  }
+
   View = OFF;
 }
 
@@ -244,7 +237,7 @@ void setup() {
     }
   }
 
-  raw_led_init();
+  led_init();
 
   can_install();
   can_start();
@@ -439,11 +432,13 @@ void core1task(void*) {
                           Status = FAILED;
                         } else {
                           Retry++;
+                          led_on();
                           // delay(50); // 50ms delay like real CCU
                           delay(50 / 2);
                           send_cancel_frame(&idle_frame);  // Transmit message
                           // Discard message(s) that received during HAL_delay(
                           purge_queue(xQueueIdle);
+                          led_off();
                           CcuStatus = PAUSE;
                         }
                       }

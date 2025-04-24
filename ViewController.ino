@@ -149,7 +149,7 @@ void purge_queue(QueueHandle_t xQueue) {
 
             default:  // Unexpected can id
               // Output Warning message
-              Serial.printf("# Core%d: Unexpected can id (0x%03x).\n", xPortGetCoreID(), can_frame->id);
+              Serial.printf("# Core%d: Unexpected can id (0x%03x).\n", xPortGetCoreID(), can_frame.id);
               break;
           }
         }

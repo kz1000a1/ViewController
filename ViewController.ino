@@ -302,9 +302,9 @@ void core0task(void*) {
             Shift = (view_frame.data[3] & 0x07);
             switch (Shift) {
               case SHIFT_P:
+                P = ON;
                 if (View == ON) {
                   view_off();
-                  P = ON;
                 }
                 break;
 
@@ -329,9 +329,9 @@ void core0task(void*) {
             ParkBrake = ((view_frame.data[7] & 0xf0) == 0x50);
 
             if (ParkBrake == ON) {
+              P = ON;
               if (View == ON) {
                 view_off();
-                P = ON;
               }
             } else {
               if (Shift == SHIFT_D) {

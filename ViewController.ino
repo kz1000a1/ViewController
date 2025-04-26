@@ -204,9 +204,9 @@ void view_on() {
     digitalWrite(RELAY0, HIGH);
     delay(500);
     digitalWrite(RELAY0, LOW);
-
-    View = ON;
   }
+
+  View = ON;
 }
 
 void view_off() {

@@ -34,7 +34,7 @@ TaskHandle_t Core1Handle = NULL;
 static struct struct_stats core[2] = { 0, 0, 0, 0, 0, 0, 0, 0,
                                        0, 0, 0, 0, 0, 0, 0, 0 };
 
-static bool VIEW_ENABLE = false;
+volatile static bool VIEW_ENABLE = false;
 
 static bool View = OFF;
 static bool P = OFF;
@@ -200,11 +200,13 @@ void view_on() {
     Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
   }
 
-  digitalWrite(RELAY0, HIGH);
-  delay(500);
-  digitalWrite(RELAY0, LOW);
+  if (VIEW_ENABLE) {
+    digitalWrite(RELAY0, HIGH);
+    delay(500);
+    digitalWrite(RELAY0, LOW);
 
-  View = ON;
+    View = ON;
+  }
 }
 
 void view_off() {
@@ -214,6 +216,10 @@ void view_off() {
   }
 
   View = OFF;
+}
+
+void IRAM_ATTR onButton() {
+  VIEW_ENABLE = !VIEW_ENABLE;
 }
 
 void setup() {
@@ -228,6 +234,10 @@ void setup() {
   digitalWrite(RELAY0, LOW);
   pinMode(MODE, INPUT_PULLUP);
   VIEW_ENABLE = (bool)digitalRead(MODE);
+
+  if (VIEW_ENABLE) {
+    attachInterrupt(MODE, onButton, FALLING);
+  }
 
   if (DebugMode == DEBUG) {
     if (VIEW_ENABLE) {
@@ -266,6 +276,7 @@ void setup() {
 
 void core0task(void*) {
   frame view_frame;
+  static bool view_function = VIEW_ENABLE;
 
   while (1) {
     if (!driver_installed) {
@@ -279,7 +290,12 @@ void core0task(void*) {
       // One or more messages received. Handle all.
       get_frame(xQueueView, &view_frame);
 
-      if (DebugMode != CANDUMP && VIEW_ENABLE) {
+      if (DebugMode == DEBUG && view_function != VIEW_ENABLE) {
+        Serial.printf("Change view function: %d -> %d\n", view_function, VIEW_ENABLE);
+        view_function = VIEW_ENABLE;
+      }
+
+      if (DebugMode != CANDUMP) {
         switch (view_frame.id) {
           case CAN_ID_SHIFT:  // 0x048
             PrevShift = Shift;

@@ -25,6 +25,10 @@
 #include "can.hpp"
 #include "led.hpp"
 
+#define VIEW_OFF_SPEED 22.0
+#define VIEW_ON_SPEED (VIEW_OFF_SPEED - 5.0)
+#define SPEED_RATE (0.01609 * 1.055)
+
 enum debug_mode DebugMode = NORMAL;  // NORMAL or DEBUG or CANDUMP
 
 static bool driver_installed = false;
@@ -309,7 +313,7 @@ void core0task(void*) {
                 break;
 
               case SHIFT_D:
-                if (PrevShift != SHIFT_D && P == ON && ParkBrake == OFF && Speed <= 15.0 && View == OFF) {
+                if (PrevShift != SHIFT_D && P == ON && ParkBrake == OFF && Speed <= VIEW_ON_SPEED && View == OFF) {
                   view_on();
                   purge_queue(xQueueView);
                   P = OFF;
@@ -325,7 +329,7 @@ void core0task(void*) {
           case CAN_ID_SPEED:  // 0x139
             PrevSpeed = Speed;
             PrevParkBrake = ParkBrake;
-            Speed = (view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8)) * 0.01609 * 3.6;
+            Speed = (view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8)) * SPEED_RATE * 3.6;
             ParkBrake = ((view_frame.data[7] & 0xf0) == 0x50);
 
             if (ParkBrake == ON) {
@@ -336,19 +340,19 @@ void core0task(void*) {
             } else {
               if (Shift == SHIFT_D) {
                 if (View == OFF) {
-                  if (Speed <= 15.0) {
+                  if (Speed <= VIEW_ON_SPEED) {
                     if (PrevParkBrake != OFF) {
                       view_on();
                       purge_queue(xQueueView);
                       P = OFF;
                     }
-                    if (15.0 < PrevSpeed) {
+                    if (VIEW_ON_SPEED < PrevSpeed) {
                       view_on();
                       purge_queue(xQueueView);
                     }
                   }
                 } else {
-                  if (20.0 <= Speed) {
+                  if (VIEW_OFF_SPEED <= Speed) {
                     view_off();
                   }
                 }

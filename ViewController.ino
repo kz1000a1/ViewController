@@ -25,7 +25,7 @@
 #include "can.hpp"
 #include "led.hpp"
 
-enum debug_mode DebugMode = DEBUG;  // NORMAL or DEBUG or CANDUMP
+enum debug_mode DebugMode = NORMAL;  // NORMAL or DEBUG or CANDUMP
 
 static bool driver_installed = false;
 TaskHandle_t Core0Handle = NULL;
@@ -325,7 +325,7 @@ void core0task(void*) {
           case CAN_ID_SPEED:  // 0x139
             PrevSpeed = Speed;
             PrevParkBrake = ParkBrake;
-            Speed = (view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8)) * 0.015694 * 3.6;
+            Speed = (view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8)) * 0.01609 * 3.6;
             ParkBrake = ((view_frame.data[7] & 0xf0) == 0x50);
 
             if (ParkBrake == ON) {

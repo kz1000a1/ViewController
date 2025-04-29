@@ -63,7 +63,7 @@ static constexpr uint32_t _queue_item_size = sizeof(frame);
 uint8_t _queue_storage_idle[_queue_length * _queue_item_size];
 uint8_t _queue_storage_view[_queue_length * _queue_item_size];
 
-struct struct_stats driver = { 0, 0, 0, 0, 0, 0, 0, 0 };
+struct struct_stats driver = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 /*
  * ESP32 CAN controller:
@@ -117,7 +117,7 @@ void isr() noexcept {
       f.id = (dev->tx_rx_buffer[1].val << 3) | (dev->tx_rx_buffer[2].val >> 5);
 
       if (DebugMode != CANDUMP) {
-        if (f.id != CAN_ID_SHIFT && f.id != CAN_ID_SPEED && f.id != CAN_ID_TCU && f.id != CAN_ID_CCU) {
+        if (f.id != CAN_ID_SHIFT && f.id != CAN_ID_SPEED && f.id != CAN_ID_LOCK && f.id != CAN_ID_TCU && f.id != CAN_ID_CCU) {
           twai_ll_set_cmd_release_rx_buffer(dev);
           continue;
         }
@@ -152,6 +152,18 @@ void isr() noexcept {
                 driver.pass.id139++;
               } else {
                 driver.error.id139++;
+              }
+            }
+            break;
+
+          case CAN_ID_LOCK:  // 0x652
+            if (DebugMode != DEBUG) {
+              xQueueSendToBackFromISR(xQueueView, &f, &task_woken);
+            } else {
+              if (xQueueSendToBackFromISR(xQueueView, &f, &task_woken) == pdPASS) {
+                driver.pass.id652++;
+              } else {
+                driver.error.id652++;
               }
             }
             break;
@@ -204,26 +216,28 @@ void IRAM_ATTR can_isr(void* arg) {
 }
 
 bool can_install() noexcept {
-  if (DebugMode == DEBUG) {
-    Serial.println("CAN bus starting...");
-  }
+  // if (DebugMode == DEBUG) {
+  //   Serial.println("CAN bus starting...");
+  // }
 
   ENTER_CRITICAL();
 
   // get timing and filter from car specific decoder
   twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
-  twai_filter_config_t f_config = { .acceptance_code = (CAN_ID_SHIFT << 21) | (CAN_ID_TCU << 5), .acceptance_mask = (0x171 << 21) | (0x2e4 << 5) | 0xf000f, .single_filter = false };
+  twai_filter_config_t f_config = { .acceptance_code = (CAN_ID_SHIFT << 21) | (CAN_ID_TCU << 5), .acceptance_mask = (0x171 << 21) | (0x7e6 << 5) | 0xf000f, .single_filter = false };
   if (DebugMode == CANDUMP) {
     f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
   }
 
-  // Serial.println("CAN bus creating frame queue...");
+  // if (DebugMode == DEBUG) {
+  //   Serial.println("CAN bus creating frame queue...");
+  // }
   xQueueIdle = xQueueCreateStatic(_queue_length, _queue_item_size, _queue_storage_idle, &_static_queue_idle);
   xQueueView = xQueueCreateStatic(_queue_length, _queue_item_size, _queue_storage_view, &_static_queue_view);
 
-  if (DebugMode == DEBUG) {
-    Serial.println("CAN bus frame queue created...");
-  }
+  // if (DebugMode == DEBUG) {
+  //   Serial.println("CAN bus frame queue created...");
+  // }
 
   //Get clock source resolution
   uint32_t clock_source_hz = 0;
@@ -247,9 +261,9 @@ bool can_install() noexcept {
   twai_ll_set_clock_source(0, t_config.clk_src);
   twai_ll_enable_clock(0, true);
 
-  if (DebugMode == DEBUG) {
-    Serial.println("CAN bus peripheral enabled...");
-  }
+  // if (DebugMode == DEBUG) {
+  //   Serial.println("CAN bus peripheral enabled...");
+  // }
 
   twai_ll_enter_reset_mode(dev);
   if (!twai_ll_is_in_reset_mode(dev)) {
@@ -267,9 +281,9 @@ bool can_install() noexcept {
   twai_ll_set_tec(dev, 0);
   twai_ll_set_err_warn_lim(dev, 96);
 
-  if (DebugMode == DEBUG) {
-    Serial.println("CAN bus mode reset...");
-  }
+  // if (DebugMode == DEBUG) {
+  //   Serial.println("CAN bus mode reset...");
+  // }
 
   // configure bus timing, acceptance filter, CLKOUT, and interrupts
   twai_ll_set_bus_timing(dev, brp, t_config.sjw, t_config.tseg_1, t_config.tseg_2, t_config.triple_sampling);

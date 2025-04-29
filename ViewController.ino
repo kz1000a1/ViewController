@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "driver/twai.h"
+#include "EEPROM.h"
 #include "subaru_levorg_vnx.h"
 #include "can.hpp"
 #include "led.hpp"
@@ -29,14 +30,18 @@
 #define VIEW_ON_SPEED (VIEW_OFF_SPEED - 5.0)
 #define SPEED_RATE (0.01609 * 1.055)
 
+uint16_t magic_number = 0x5a5a;
+static uint16_t max_speed = 0x0000;
+static uint16_t min_speed = 0x1fff;
+
 enum debug_mode DebugMode = NORMAL;  // NORMAL or DEBUG or CANDUMP
 
 static bool driver_installed = false;
 TaskHandle_t Core0Handle = NULL;
 TaskHandle_t Core1Handle = NULL;
 
-static struct struct_stats core[2] = { 0, 0, 0, 0, 0, 0, 0, 0,
-                                       0, 0, 0, 0, 0, 0, 0, 0 };
+static struct struct_stats core[2] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 volatile static bool VIEW_ENABLE = false;
 
@@ -46,8 +51,11 @@ static uint8_t Shift = SHIFT_P;
 static uint8_t PrevShift = SHIFT_P;
 static float Speed = 0.0;
 static float PrevSpeed = 0.0;
+static uint16_t RawSpeed = 0;
 static bool ParkBrake = ON;
 static bool PrevParkBrake = ON;
+static bool DoorLock = LOCK;
+static bool PrevDoorLock = LOCK;
 
 void print_frame(frame* can_frame) {
   uint32_t CurrentTime;
@@ -103,6 +111,10 @@ void get_frame(QueueHandle_t xQueue, frame* can_frame) {
           stats->id139++;
           break;
 
+        case CAN_ID_LOCK:  // 0x652
+          stats->id652++;
+          break;
+
         case CAN_ID_TCU:  // 0x174
           stats->id174++;
           break;
@@ -143,6 +155,10 @@ void purge_queue(QueueHandle_t xQueue) {
               stats->id139++;
               break;
 
+            case CAN_ID_LOCK:  // 0x652
+              stats->id652++;
+              break;
+
             case CAN_ID_TCU:  // 0x174
               stats->id174++;
               break;
@@ -165,7 +181,7 @@ void purge_queue(QueueHandle_t xQueue) {
 void send_cancel_frame(frame* rx_frame) {
   // Storage for transmit message buffer
   twai_message_t tx_message;
-  frame print_frame;
+
   tx_message.identifier = CAN_ID_CCU;
   tx_message.data_length_code = 8;
   tx_message.rtr = 0;
@@ -199,7 +215,7 @@ void send_cancel_frame(frame* rx_frame) {
 }
 
 void view_on() {
-  led_on();
+  // led_on();
   if (DebugMode == DEBUG) {
     Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
   }
@@ -214,9 +230,10 @@ void view_on() {
 }
 
 void view_off() {
-  led_off();
+  // led_off();
   if (DebugMode == DEBUG) {
     Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
+    Serial.printf("OFF: RawSpeed=0x%04X max=0x%04X min=0x%04X\n", RawSpeed, max_speed, min_speed);
   }
 
   View = OFF;
@@ -227,11 +244,14 @@ void IRAM_ATTR onButton() {
 }
 
 void setup() {
-  if (DebugMode != NORMAL) {
-    Serial.begin(115200);
-    while (!Serial)
-      ;
-  }
+
+  uint16_t tmp;
+
+  // if (DebugMode != NORMAL) {
+  Serial.begin(115200);
+  while (!Serial)
+    ;
+  // }
 
   // GPIO Pin
   pinMode(RELAY0, OUTPUT);
@@ -250,6 +270,32 @@ void setup() {
       Serial.println("Disabe Auto View Mode.");
     }
   }
+
+  // for Logging Door Lock Speed
+  EEPROM.begin(sizeof(magic_number)+sizeof(max_speed)+sizeof(min_speed));
+
+  EEPROM.get(0, tmp);
+  if (DebugMode == DEBUG) {
+    Serial.printf("Magic:0x%04X\n", tmp);
+  }
+
+  if (tmp != magic_number) {
+    if (DebugMode == DEBUG) {
+      Serial.println("Initializing ...");
+    }
+    EEPROM.put(0, magic_number);
+    EEPROM.put(2, max_speed);
+    EEPROM.put(4, min_speed);
+    EEPROM.commit();
+  } // else {
+    EEPROM.get(0, tmp);
+    EEPROM.get(2, max_speed);
+    EEPROM.get(4, min_speed);
+  // }
+
+  // if (DebugMode == DEBUG) {
+    Serial.printf("Door unlock magic: 0x%04X tmp: 0x%04X max: 0x%04X min: 0x%04X\n", magic_number, tmp, max_speed, min_speed);
+  // }
 
   led_init();
 
@@ -329,6 +375,7 @@ void core0task(void*) {
           case CAN_ID_SPEED:  // 0x139
             PrevSpeed = Speed;
             PrevParkBrake = ParkBrake;
+            RawSpeed = view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8);
             Speed = (view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8)) * SPEED_RATE * 3.6;
             ParkBrake = ((view_frame.data[7] & 0xf0) == 0x50);
 
@@ -358,6 +405,37 @@ void core0task(void*) {
                 }
               }
             }
+            break;
+
+          case CAN_ID_LOCK:  // 0x652
+            PrevDoorLock = DoorLock;
+            DoorLock = ((view_frame.data[2] & 0x01) == 0x00);
+
+            if (DoorLock == UNLOCK) {
+              led_off();
+              if (max_speed < RawSpeed) {
+                if (DebugMode == DEBUG) {
+                  Serial.printf("Door unlock max: 0x%04X => 0x%04X\n", max_speed, RawSpeed);
+                }
+                max_speed = RawSpeed;
+                EEPROM.put(2, max_speed);
+              }
+            } else {  // Door LOCK
+              led_on();
+              if (PrevDoorLock == UNLOCK) {  // Door UNLOCK -> LOCK
+                if (RawSpeed != 0) {
+                  if (RawSpeed < min_speed) {
+                    if (DebugMode == DEBUG) {
+                      Serial.printf("Door unlock min: 0x%04X => 0x%04X\n", min_speed, RawSpeed);
+                    }
+                    min_speed = RawSpeed;
+                    EEPROM.put(4, min_speed);
+                    EEPROM.commit();
+                  }
+                }
+              }
+            }
+
             break;
 
           case CAN_ID_TCU:  // 0x174
@@ -492,6 +570,7 @@ void core1task(void*) {
 }
 
 void loop() {
+
   if (DebugMode == DEBUG) {
     Serial.println("");
     Serial.println("--------+-----------------------------------------------------------+-----------------------------------+------------");
@@ -503,10 +582,13 @@ void loop() {
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
     Serial.printf("  0x048 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id048, core[0].discard.id048, core[1].pass.id048, core[1].discard.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048, driver.pass.id048, driver.error.id048, driver.error.id048 + driver.pass.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048 - driver.pass.id048);
     Serial.printf("  0x139 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id139, core[0].discard.id139, core[1].pass.id139, core[1].discard.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139, driver.pass.id139, driver.error.id139, driver.error.id139 + driver.pass.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139 - driver.pass.id139);
+    Serial.printf("  0x652 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id652, core[0].discard.id652, core[1].pass.id652, core[1].discard.id652, core[0].pass.id652 + core[0].discard.id652 + core[1].pass.id652 + core[1].discard.id652, driver.pass.id652, driver.error.id652, driver.error.id652 + driver.pass.id652, core[0].pass.id652 + core[0].discard.id652 + core[1].pass.id652 + core[1].discard.id652 - driver.pass.id652);
     Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id174, core[0].discard.id174, core[1].pass.id174, core[1].discard.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, driver.pass.id174, driver.error.id174, driver.error.id174 + driver.pass.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174 - driver.pass.id174);
     Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id390, core[0].discard.id390, core[1].pass.id390, core[1].discard.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390, driver.pass.id390, driver.error.id390, driver.error.id390 + driver.pass.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390 - driver.pass.id390);
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
     Serial.println("");
   }
+  Serial.printf("\nRawSpeed max:0x%04X min:0x%04X   ", max_speed, min_speed);
+  Serial.printf("Speed max:%4.1f min:%4.1f\n", max_speed * SPEED_RATE * 3.6, min_speed * SPEED_RATE * 3.6);
   sleep(10);
 }

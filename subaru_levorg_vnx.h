@@ -27,6 +27,7 @@
 // Receive Only Two CAN Ids
 #define CAN_ID_SHIFT 0x048
 #define CAN_ID_SPEED 0x139
+#define CAN_ID_LOCK  0x652
 #define CAN_ID_TCU 0x174
 #define CAN_ID_CCU 0x390
 
@@ -55,6 +56,10 @@ enum status {
 // PARKING BRAKE/DEBUG LED/EYESIGHT HOLD
 #define OFF 0
 #define ON 1
+
+// DOOR
+#define UNLOCK 0
+#define LOCK 1
 
 // SHIFT
 #define SHIFT_D 1

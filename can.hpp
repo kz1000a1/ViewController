@@ -34,6 +34,7 @@ struct stats {
   uint32_t id139;
   uint32_t id174;
   uint32_t id390;
+  uint32_t id652;
 };
 
 extern QueueHandle_t xQueueIdle;

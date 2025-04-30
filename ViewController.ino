@@ -28,7 +28,7 @@
 
 #define VIEW_OFF_SPEED 22.0
 #define VIEW_ON_SPEED (VIEW_OFF_SPEED - 5.0)
-#define SPEED_RATE (0.01609 * 1.055)
+#define SPEED_RATE (0.01609 * 1.08)
 
 uint16_t magic_number = 0x5a5a;
 static uint16_t max_speed = 0x0000;
@@ -281,7 +281,7 @@ void setup() {
 
   if (tmp != magic_number) {
     if (DebugMode == DEBUG) {
-      Serial.println("Initializing ...");
+      Serial.println("Initializing EEPROM ...");
     }
     EEPROM.put(0, magic_number);
     EEPROM.put(2, max_speed);
@@ -588,7 +588,7 @@ void loop() {
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
     Serial.println("");
   }
-  Serial.printf("\nRawSpeed max:0x%04X min:0x%04X   ", max_speed, min_speed);
+  Serial.printf("\nRawSpeed max:0x%04X(%d) min:0x%04X(%d)   ", max_speed, max_speed, min_speed, min_speed);
   Serial.printf("Speed max:%4.1f min:%4.1f\n", max_speed * SPEED_RATE * 3.6, min_speed * SPEED_RATE * 3.6);
   sleep(10);
 }

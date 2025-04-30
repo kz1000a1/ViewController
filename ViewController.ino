@@ -28,9 +28,9 @@
 
 #define VIEW_OFF_SPEED 22.0
 #define VIEW_ON_SPEED (VIEW_OFF_SPEED - 5.0)
-#define SPEED_RATE (0.01609 * 1.08)
+#define SPEED_RATE (0.01609 * 1.07)
 
-uint16_t magic_number = 0x5a5a;
+uint16_t magic_number = 0xa5a5;
 static uint16_t max_speed = 0x0000;
 static uint16_t min_speed = 0x1fff;
 
@@ -215,7 +215,7 @@ void send_cancel_frame(frame* rx_frame) {
 }
 
 void view_on() {
-  // led_on();
+  led_on();
   if (DebugMode == DEBUG) {
     Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
   }
@@ -230,7 +230,7 @@ void view_on() {
 }
 
 void view_off() {
-  // led_off();
+  led_off();
   if (DebugMode == DEBUG) {
     Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
     Serial.printf("OFF: RawSpeed=0x%04X max=0x%04X min=0x%04X\n", RawSpeed, max_speed, min_speed);
@@ -412,7 +412,6 @@ void core0task(void*) {
             DoorLock = ((view_frame.data[2] & 0x01) == 0x00);
 
             if (DoorLock == UNLOCK) {
-              led_off();
               if (max_speed < RawSpeed) {
                 if (DebugMode == DEBUG) {
                   Serial.printf("Door unlock max: 0x%04X => 0x%04X\n", max_speed, RawSpeed);
@@ -421,7 +420,6 @@ void core0task(void*) {
                 EEPROM.put(2, max_speed);
               }
             } else {  // Door LOCK
-              led_on();
               if (PrevDoorLock == UNLOCK) {  // Door UNLOCK -> LOCK
                 if (RawSpeed != 0) {
                   if (RawSpeed < min_speed) {

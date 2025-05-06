@@ -284,13 +284,13 @@ void setup() {
       Serial.println("Initializing EEPROM ...");
     }
     EEPROM.put(0, magic_number);
-    EEPROM.put(2, max_speed);
-    EEPROM.put(4, min_speed);
+    EEPROM.put(sizeof(magic_number), max_speed);
+    EEPROM.put(sizeof(magic_number)+sizeof(max_speed), min_speed);
     EEPROM.commit();
   } // else {
     EEPROM.get(0, tmp);
-    EEPROM.get(2, max_speed);
-    EEPROM.get(4, min_speed);
+    EEPROM.get(sizeof(magic_number), max_speed);
+    EEPROM.get(sizeof(magic_number)+sizeof(max_speed), min_speed);
   // }
 
   // if (DebugMode == DEBUG) {
@@ -417,7 +417,7 @@ void core0task(void*) {
                   Serial.printf("Door unlock max: 0x%04X => 0x%04X\n", max_speed, RawSpeed);
                 }
                 max_speed = RawSpeed;
-                EEPROM.put(2, max_speed);
+                EEPROM.put(sizeof(magic_number), max_speed);
               }
             } else {  // Door LOCK
               if (PrevDoorLock == UNLOCK) {  // Door UNLOCK -> LOCK
@@ -427,7 +427,7 @@ void core0task(void*) {
                       Serial.printf("Door unlock min: 0x%04X => 0x%04X\n", min_speed, RawSpeed);
                     }
                     min_speed = RawSpeed;
-                    EEPROM.put(4, min_speed);
+                    EEPROM.put(sizeof(magic_number)+sizeof(max_speed), min_speed);
                     EEPROM.commit();
                   }
                 }

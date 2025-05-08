@@ -30,7 +30,9 @@
 #define VIEW_ON_SPEED (VIEW_OFF_SPEED - 5.0)
 #define SPEED_RATE (0.01609 * 1.07)
 
-uint16_t magic_number = 0xa5a5;
+// Change Magic Number for Initialize EEPROM
+// uint16_t magic_number = 0xa5a5;
+uint16_t magic_number = !(0xa5a5);
 static uint16_t max_speed = 0x0000;
 static uint16_t min_speed = 0x1fff;
 
@@ -222,7 +224,7 @@ void view_on() {
 
   if (VIEW_ENABLE) {
     digitalWrite(RELAY0, HIGH);
-    delay(500);
+    delay(50);
     digitalWrite(RELAY0, LOW);
   }
 

@@ -22,13 +22,19 @@
 
 #include "driver/twai.h"
 #include "EEPROM.h"
+
+// #define AUTO_PARK_BRAKE 1
+
 #include "subaru_levorg_vnx.h"
 #include "can.hpp"
 #include "led.hpp"
 
 #define VIEW_OFF_SPEED 22.0
+#define VIEW_OFF_RAW_SPEED 0x164
 #define VIEW_ON_SPEED (VIEW_OFF_SPEED - 5.0)
-#define SPEED_RATE (0.01609 * 1.07)
+
+static float SPEED_RATE = (VIEW_OFF_SPEED / VIEW_OFF_RAW_SPEED);
+static uint16_t VIEW_ON_RAW_SPEED = VIEW_OFF_RAW_SPEED * VIEW_ON_SPEED / VIEW_OFF_SPEED;
 
 // Change Magic Number for Initialize EEPROM
 // uint16_t magic_number = 0xa5a5;
@@ -51,9 +57,8 @@ static bool View = OFF;
 static bool P = OFF;
 static uint8_t Shift = SHIFT_P;
 static uint8_t PrevShift = SHIFT_P;
-static float Speed = 0.0;
-static float PrevSpeed = 0.0;
 static uint16_t RawSpeed = 0;
+static uint16_t PrevRawSpeed = 0;
 static bool ParkBrake = ON;
 static bool PrevParkBrake = ON;
 static bool DoorLock = LOCK;
@@ -216,16 +221,31 @@ void send_cancel_frame(frame* rx_frame) {
   }
 }
 
-void view_on() {
-  led_on();
+#if defined(AUTO_PARK_BRAKE)
+void brake_on() {
+  // led_on();
   if (DebugMode == DEBUG) {
-    Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
+    Serial.printf("Brake ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),RawSpeed=0x%04X(0x%04X)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, RawSpeed, PrevRawSpeed);
   }
 
   if (VIEW_ENABLE) {
-    digitalWrite(RELAY0, HIGH);
+    digitalWrite(RELAY1, RELAY1_ON);
+    delay(500);
+    digitalWrite(RELAY1, RELAY1_OFF);
+  }
+}
+#endif
+
+void view_on() {
+  led_on();
+  if (DebugMode == DEBUG) {
+    Serial.printf("ON: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),RawSpeed=0x%X(0x%04X)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, RawSpeed, PrevRawSpeed);
+  }
+
+  if (VIEW_ENABLE) {
+    digitalWrite(RELAY0, RELAY0_ON);
     delay(50);
-    digitalWrite(RELAY0, LOW);
+    digitalWrite(RELAY0, RELAY0_OFF);
   }
 
   View = ON;
@@ -234,8 +254,8 @@ void view_on() {
 void view_off() {
   led_off();
   if (DebugMode == DEBUG) {
-    Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),Speed=%4.1f(%4.1f)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, Speed, PrevSpeed);
-    Serial.printf("OFF: RawSpeed=0x%04X max=0x%04X min=0x%04X\n", RawSpeed, max_speed, min_speed);
+    Serial.printf("OFF: View=%d,P=%d,Shift=%d(%d),ParkBrake=%d(%d),RawSpeed=0x(0x%04X)\n", View, P, Shift, PrevShift, ParkBrake, PrevParkBrake, RawSpeed, PrevRawSpeed);
+    Serial.printf("OFF: max_speed=0x%04X min_speed=0x%04X\n", max_speed, min_speed);
   }
 
   View = OFF;
@@ -257,7 +277,11 @@ void setup() {
 
   // GPIO Pin
   pinMode(RELAY0, OUTPUT);
-  digitalWrite(RELAY0, LOW);
+  digitalWrite(RELAY0, RELAY0_OFF);
+  #if defined(AUTO_PARK_BRAKE)
+  pinMode(RELAY1, OUTPUT);
+  digitalWrite(RELAY1, RELAY1_OFF);
+  #endif
   pinMode(MODE, INPUT_PULLUP);
   VIEW_ENABLE = (bool)digitalRead(MODE);
 
@@ -358,10 +382,16 @@ void core0task(void*) {
                 if (View == ON) {
                   view_off();
                 }
+#if defined(AUTO_PARK_BRAKE)
+                if(PrevShift != SHIFT_P && ParkBrake == OFF){
+                  brake_on();
+                  purge_queue(xQueueView);
+                }
+#endif
                 break;
 
               case SHIFT_D:
-                if (PrevShift != SHIFT_D && P == ON && ParkBrake == OFF && Speed <= VIEW_ON_SPEED && View == OFF) {
+                if (PrevShift != SHIFT_D && P == ON && ParkBrake == OFF && RawSpeed <= VIEW_ON_RAW_SPEED && View == OFF) {
                   view_on();
                   purge_queue(xQueueView);
                   P = OFF;
@@ -375,10 +405,9 @@ void core0task(void*) {
             break;
 
           case CAN_ID_SPEED:  // 0x139
-            PrevSpeed = Speed;
+            PrevRawSpeed = RawSpeed;
             PrevParkBrake = ParkBrake;
             RawSpeed = view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8);
-            Speed = (view_frame.data[2] + ((view_frame.data[3] & 0x1f) << 8)) * SPEED_RATE * 3.6;
             ParkBrake = ((view_frame.data[7] & 0xf0) == 0x50);
 
             if (ParkBrake == ON) {
@@ -389,19 +418,19 @@ void core0task(void*) {
             } else {
               if (Shift == SHIFT_D) {
                 if (View == OFF) {
-                  if (Speed <= VIEW_ON_SPEED) {
+                  if (RawSpeed <= VIEW_ON_RAW_SPEED) {
                     if (PrevParkBrake != OFF) {
                       view_on();
                       purge_queue(xQueueView);
                       P = OFF;
                     }
-                    if (VIEW_ON_SPEED < PrevSpeed) {
+                    if (VIEW_ON_RAW_SPEED < PrevRawSpeed) {
                       view_on();
                       purge_queue(xQueueView);
                     }
                   }
                 } else {
-                  if (VIEW_OFF_SPEED <= Speed) {
+                  if (VIEW_OFF_RAW_SPEED <= RawSpeed) {
                     view_off();
                   }
                 }
@@ -586,9 +615,8 @@ void loop() {
     Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id174, core[0].discard.id174, core[1].pass.id174, core[1].discard.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, driver.pass.id174, driver.error.id174, driver.error.id174 + driver.pass.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174 - driver.pass.id174);
     Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id390, core[0].discard.id390, core[1].pass.id390, core[1].discard.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390, driver.pass.id390, driver.error.id390, driver.error.id390 + driver.pass.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390 - driver.pass.id390);
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
-    Serial.println("");
   }
   Serial.printf("\nRawSpeed max:0x%04X(%d) min:0x%04X(%d)   ", max_speed, max_speed, min_speed, min_speed);
-  Serial.printf("Speed max:%4.1f min:%4.1f\n", max_speed * SPEED_RATE * 3.6, min_speed * SPEED_RATE * 3.6);
+  Serial.printf("Speed max:%4.1f min:%4.1f\n", max_speed * SPEED_RATE, min_speed * SPEED_RATE);
   sleep(10);
 }

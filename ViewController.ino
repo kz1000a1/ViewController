@@ -22,6 +22,14 @@
 
 #include "driver/twai.h"
 #include "EEPROM.h"
+#include "WiFi.h"
+#include "WebServer.h"
+
+const char ssid[] = "ViewController";  // *** set any ssid ***
+const char pass[] = "levorgvn5";       // *** set any pw   ***
+const IPAddress ip(192, 168, 2, 254);  // *** set any addr ***
+const IPAddress subnet(255, 255, 255, 0);
+WebServer server(80);
 
 // #define AUTO_PARK_BRAKE 1
 
@@ -32,15 +40,19 @@
 #define VIEW_OFF_SPEED 22.0
 #define VIEW_OFF_RAW_SPEED 0x164
 #define VIEW_ON_SPEED (VIEW_OFF_SPEED - 5.0)
+#define MAX_INIT 0x0000
+#define MIN_INIT 0x1fff
 
 static float SPEED_RATE = (VIEW_OFF_SPEED / VIEW_OFF_RAW_SPEED);
 static uint16_t VIEW_ON_RAW_SPEED = VIEW_OFF_RAW_SPEED * VIEW_ON_SPEED / VIEW_OFF_SPEED;
 
 // Change Magic Number for Initialize EEPROM
 // uint16_t magic_number = 0xa5a5;
-uint16_t magic_number = !(0xa5a5);
-static uint16_t max_speed = 0x0000;
-static uint16_t min_speed = 0x1fff;
+uint16_t magic_number = 0x5a5a;
+static uint16_t max_speed = MAX_INIT;
+static uint16_t min_speed = MIN_INIT;
+static uint8_t idle_stop_fail = 0;
+static uint8_t idle_stop_success = 0;
 
 enum debug_mode DebugMode = NORMAL;  // NORMAL or DEBUG or CANDUMP
 
@@ -51,7 +63,7 @@ TaskHandle_t Core1Handle = NULL;
 static struct struct_stats core[2] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-volatile static bool VIEW_ENABLE = false;
+volatile static bool VIEW_ENABLE = true;
 
 static bool View = OFF;
 static bool P = OFF;
@@ -261,8 +273,192 @@ void view_off() {
   View = OFF;
 }
 
+void init_eeprom(void) {
+
+  if (DebugMode == DEBUG) {
+    EEPROM.get(sizeof(magic_number), max_speed);
+    EEPROM.get(sizeof(magic_number) + sizeof(max_speed), min_speed);
+    EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), idle_stop_fail);
+    EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail), idle_stop_success);
+    Serial.printf("init_eeprom: max_speed: 0x%04X -> 0x%04X, min_speed: 0x%04X -> 0x%04X\n", max_speed, MAX_INIT, min_speed, MIN_INIT);
+    Serial.printf("init_eeprom: idle_stop_fail: %d -> 0, idle_stop_success: %d -> 0\n", idle_stop_fail, idle_stop_success);
+  }
+  max_speed = MAX_INIT;
+  min_speed = MIN_INIT;
+  idle_stop_fail = 0;
+  idle_stop_success = 0;
+  EEPROM.put(sizeof(magic_number), max_speed);
+  EEPROM.put(sizeof(magic_number) + sizeof(max_speed), min_speed);
+  EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), idle_stop_fail);
+  EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail), idle_stop_success);
+  EEPROM.commit();
+  EEPROM.get(sizeof(magic_number), max_speed);
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed), min_speed);
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), idle_stop_fail);
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail), idle_stop_success);
+  if (DebugMode == DEBUG) {
+    Serial.printf("init_eeprom: max_speed: 0x%04X, min_speed: 0x%04X, idle_stop_fail: %d, idle_stop_success: %d\n", max_speed, min_speed, idle_stop_fail, idle_stop_success);
+  }
+}
+
+void modify_eeprom(void) {
+
+  if (DebugMode == DEBUG) {
+    EEPROM.get(sizeof(magic_number), max_speed);
+    EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail) + sizeof(idle_stop_success), VIEW_ENABLE);
+    Serial.printf("modify_eeprom: %d -> %d\n", VIEW_ENABLE, VIEW_ENABLE ^ true);
+  }
+
+  if (VIEW_ENABLE) {
+    VIEW_ENABLE = false;
+  } else {
+    VIEW_ENABLE = true;
+  }
+  EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail) + sizeof(idle_stop_success), VIEW_ENABLE);
+  EEPROM.commit();
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail) + sizeof(idle_stop_success), VIEW_ENABLE);
+  if (DebugMode == DEBUG) {
+    Serial.printf("modify_eeprom: %d\n", VIEW_ENABLE);
+  }
+}
+
+void handleRoot(void) {
+  String html;
+
+  // HTMLを組み立てる
+  html = "<!DOCTYPE html>";
+  html += "<html>";
+  html += "<head>";
+  html += "<meta charset=\"utf-8\">";
+  html += "<title>統計情報/設定</title>";
+  html += "</head>";
+  html += "<body>";
+  if (DebugMode == DEBUG) {
+    html += String("<p>CAN フレーム情報</p>");
+
+    html += String("<p><table border=\"1\" align=\"center\"><tr><td rowspan=\"3\" align=\"center\">CAN ID</td><td colspan=\"5\" align=\"center\">Task</td><td colspan=\"3\" align=\"center\">Driver</td><td rowspan=\"3\" align=\"center\">Diff</td></tr>");
+    html += String("<tr><td colspan=\"2\" align=\"center\">Core0</td><td colspan=\"2\" align=\"center\">Core1</td><td rowspan=\"2\" align=\"center\">Total</td><td rowspan=\"2\" align=\"center\">Pass</td><td rowspan=\"2\" align=\"center\">Error</td><td rowspan=\"2\" align=\"center\">Total</td></tr>");
+    html += String("<tr><td align=\"center\">Receive</td><td align=\"center\">Discard</td><td align=\"center\">Receive</td><td align=\"center\">Discard</td></tr>");
+    html += String("<tr><td>0x048</td><td align=\"right\">" + String(core[0].pass.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].discard.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].pass.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].discard.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id048 + driver.pass.id048, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id048 - core[0].pass.id048 - core[0].discard.id048 - core[1].pass.id048 - core[1].discard.id048, DEC) + "</td></tr>");
+    html += String("<tr><td>0x139</td><td align=\"right\">" + String(core[0].pass.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].discard.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].pass.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].discard.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id139 + driver.pass.id139, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id139 - core[0].pass.id139 - core[0].discard.id139 - core[1].pass.id139 - core[1].discard.id139, DEC) + "</td></tr>");
+    html += String("<tr><td>0x652</td><td align=\"right\">" + String(core[0].pass.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].discard.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].pass.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].discard.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].pass.id652 + core[0].discard.id652 + core[1].pass.id652 + core[1].discard.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id652 + driver.pass.id652, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id652 - core[0].pass.id652 - core[0].discard.id652 - core[1].pass.id652 - core[1].discard.id652, DEC) + "</td></tr>");
+    html += String("<tr><td>0x174</td><td align=\"right\">" + String(core[0].pass.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].discard.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].pass.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].discard.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id174 + driver.pass.id174, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id174 - core[0].pass.id174 - core[0].discard.id174 - core[1].pass.id174 - core[1].discard.id174, DEC) + "</td></tr>");
+    html += String("<tr><td>0x390</td><td align=\"right\">" + String(core[0].pass.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].discard.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].pass.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[1].discard.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.error.id390 + driver.pass.id390, DEC) + "</td>");
+    html += String("<td align=\"right\">" + String(driver.pass.id390 - core[0].pass.id390 - core[0].discard.id390 - core[1].pass.id390 - core[1].discard.id390, DEC) + "</td></tr>");
+    html += "</table></p>";
+  }
+
+  html += "<p>デバッグ情報</p>";
+  html += "<p><table align=\"center\"><tr><td>";
+  html += "<table border=\"1\" align=\"left\"><tr><td align=\"center\" colspan=\"2\">ドアロック速度</td></tr>";
+  html += "<tr><td align=\"center\">最高</td><td align=\"center\">最低</td></tr>";
+  html += String("<tr><td align=\"right\">0x" + String(max_speed, HEX) + "</td><td align=\"right\">0x" + String(min_speed, HEX) + "</td></tr></table>");
+  html += "</td><td width=\"10\"></td><td>";
+  html += "<table border=\"1\" align=\"right\"><tr><td align=\"center\" colspan=\"2\">アイドリングストップキャンセル</td></tr>";
+  html += "<tr><td align=\"center\">失敗</td><td align=\"center\">成功</td></tr>";
+  html += String("<tr><td align=\"right\">" + String(idle_stop_fail, DEC) + "</td><td align=\"right\">" + String(idle_stop_success, DEC) + "</td></tr></table>");
+  html += "</td></tr></table></p>";
+
+  html += "<p>設定</p>";
+  html += "<p><table align=\"center\"><tr><td>";
+  html += "<button type=\"button\" onclick=\"location.href='/InitEEPROM'\">EEPROM リセット</button>";
+  html += "</td><td width=\"20\"></td><td>";
+  if (VIEW_ENABLE) {
+    html += "<button type=\"button\" onclick=\"location.href='/ModifyViewFunc'\">VIEW 機能無効化</button>";
+  } else {
+    html += "<button type=\"button\" onclick=\"location.href='/ModifyViewFunc'\">VIEW 機能有効化</button>";
+  }
+  html += "</td><td width=\"20\"></td><td>";
+  html += "<button type=\"button\" onclick=\"location.href='/SoftwareReset'\">再起動</button>";
+  html += "</td></tr></table></p>";
+
+  html += "</body>";
+  html += "</html>";
+
+  // HTMLを出力する
+  server.send(200, "text/html", html);
+}
+
+void handleEEPROM(void) {
+  String msg;
+
+  init_eeprom();
+  msg = "EEPROM を初期化しました";
+
+  // 変数msgの文字列を送信する
+  server.send(200, "text/plain; charset=utf-8", msg);
+}
+
+void handleViewFunc(void) {
+  String msg;
+
+  modify_eeprom();
+
+  if (VIEW_ENABLE) {
+    msg = "VIEW 機能を有効にしました";
+  } else {
+    msg = "VIEW 機能を無効にしました";
+  }
+  // 変数msgの文字列を送信する
+  server.send(200, "text/plain; charset=utf-8", msg);
+}
+
+void handleReset(void) {
+  ESP.restart();
+}
+
+void handleNotFound(void) {
+  server.send(404, "text/plain", "Not Found.");
+}
+
+
 void IRAM_ATTR onButton() {
-  VIEW_ENABLE = !VIEW_ENABLE;
+  if (VIEW_ENABLE) {
+    VIEW_ENABLE = false;
+  } else {
+    VIEW_ENABLE = true;
+  }
+  EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), VIEW_ENABLE);
+  EEPROM.commit();
 }
 
 void setup() {
@@ -278,10 +474,10 @@ void setup() {
   // GPIO Pin
   pinMode(RELAY0, OUTPUT);
   digitalWrite(RELAY0, RELAY0_OFF);
-  #if defined(AUTO_PARK_BRAKE)
+#if defined(AUTO_PARK_BRAKE)
   pinMode(RELAY1, OUTPUT);
   digitalWrite(RELAY1, RELAY1_OFF);
-  #endif
+#endif
   pinMode(MODE, INPUT_PULLUP);
   VIEW_ENABLE = (bool)digitalRead(MODE);
 
@@ -298,11 +494,11 @@ void setup() {
   }
 
   // for Logging Door Lock Speed
-  EEPROM.begin(sizeof(magic_number)+sizeof(max_speed)+sizeof(min_speed));
+  EEPROM.begin(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail) + sizeof(idle_stop_success) + sizeof(VIEW_ENABLE));
 
   EEPROM.get(0, tmp);
   if (DebugMode == DEBUG) {
-    Serial.printf("Magic:0x%04X\n", tmp);
+    Serial.printf("Magic:0x%04X(0x%04X)\n", magic_number, tmp);
   }
 
   if (tmp != magic_number) {
@@ -311,17 +507,45 @@ void setup() {
     }
     EEPROM.put(0, magic_number);
     EEPROM.put(sizeof(magic_number), max_speed);
-    EEPROM.put(sizeof(magic_number)+sizeof(max_speed), min_speed);
+    EEPROM.put(sizeof(magic_number) + sizeof(max_speed), min_speed);
+    EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), idle_stop_fail);
+    EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail), idle_stop_success);
+    EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail) + sizeof(idle_stop_success), VIEW_ENABLE);
     EEPROM.commit();
-  } // else {
-    EEPROM.get(0, tmp);
-    EEPROM.get(sizeof(magic_number), max_speed);
-    EEPROM.get(sizeof(magic_number)+sizeof(max_speed), min_speed);
+  }  // else {
+  EEPROM.get(0, tmp);
+  EEPROM.get(sizeof(magic_number), max_speed);
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed), min_speed);
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), idle_stop_fail);
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail), idle_stop_success);
+  EEPROM.get(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail) + sizeof(idle_stop_success), VIEW_ENABLE);
   // }
 
-  // if (DebugMode == DEBUG) {
-    Serial.printf("Door unlock magic: 0x%04X tmp: 0x%04X max: 0x%04X min: 0x%04X\n", magic_number, tmp, max_speed, min_speed);
-  // }
+  if (DebugMode == DEBUG) {
+    Serial.printf("EEPROM magic: 0x%04X tmp: 0x%04X max: 0x%04X min: 0x%04X view: %d\n", magic_number, tmp, max_speed, min_speed, VIEW_ENABLE);
+  }
+
+  // WiFi AP
+  WiFi.softAP(ssid, pass);
+  delay(100);
+  WiFi.softAPConfig(ip, ip, subnet);
+  IPAddress myIP = WiFi.softAPIP();
+  Serial.print("SSID= ");
+  Serial.println(ssid);
+  Serial.print("Fixed IP addr= ");
+  Serial.println(myIP);
+  Serial.println("WiFi AP started!");  // 処理するアドレスを定義
+
+  // Web Server
+  server.on("/", handleRoot);
+  server.on("/InitEEPROM", handleEEPROM);
+  server.on("/ModifyViewFunc", handleViewFunc);
+  server.on("/SoftwareReset", handleReset);
+  server.onNotFound(handleNotFound);
+  // Webサーバーを起動
+  server.begin();
+  Serial.println("Web Server started!");
+
 
   led_init();
 
@@ -383,7 +607,7 @@ void core0task(void*) {
                   view_off();
                 }
 #if defined(AUTO_PARK_BRAKE)
-                if(PrevShift != SHIFT_P && ParkBrake == OFF){
+                if (PrevShift != SHIFT_P && ParkBrake == OFF) {
                   brake_on();
                   purge_queue(xQueueView);
                 }
@@ -449,8 +673,9 @@ void core0task(void*) {
                 }
                 max_speed = RawSpeed;
                 EEPROM.put(sizeof(magic_number), max_speed);
+                EEPROM.commit();
               }
-            } else {  // Door LOCK
+            } else {                         // Door LOCK
               if (PrevDoorLock == UNLOCK) {  // Door UNLOCK -> LOCK
                 if (RawSpeed != 0) {
                   if (RawSpeed < min_speed) {
@@ -458,7 +683,7 @@ void core0task(void*) {
                       Serial.printf("Door unlock min: 0x%04X => 0x%04X\n", min_speed, RawSpeed);
                     }
                     min_speed = RawSpeed;
-                    EEPROM.put(sizeof(magic_number)+sizeof(max_speed), min_speed);
+                    EEPROM.put(sizeof(magic_number) + sizeof(max_speed), min_speed);
                     EEPROM.commit();
                   }
                 }
@@ -490,7 +715,7 @@ void core1task(void*) {
   static uint16_t PreviousCanId = CAN_ID_CCU;
   static uint8_t Retry = 0;
 
-  while (1) {
+  while (Status != SUCCEEDED && Status != FAILED) {
     if (!driver_installed) {
       // Driver not installed
       delay(1000);
@@ -596,6 +821,27 @@ void core1task(void*) {
       }
     }
   }
+
+  switch (Status) {
+    case SUCCEEDED:
+      idle_stop_success++;
+      EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail), idle_stop_success);
+      EEPROM.commit();
+      break;
+
+    case FAILED:
+      idle_stop_fail++;
+      EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), idle_stop_fail);
+      EEPROM.commit();
+      break;
+
+    default:
+      break;
+  }
+
+  while (1) {
+    server.handleClient();
+  }
 }
 
 void loop() {
@@ -609,14 +855,15 @@ void loop() {
     Serial.println("        |-----------+-----------+-----------+-----------|   Total   |    Pass   |   Error   |   Total   |");
     Serial.println("        |  Receive  |  Discard  |  Receive  |  Discard  |           |           |           |           |");
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
-    Serial.printf("  0x048 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id048, core[0].discard.id048, core[1].pass.id048, core[1].discard.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048, driver.pass.id048, driver.error.id048, driver.error.id048 + driver.pass.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048 - driver.pass.id048);
-    Serial.printf("  0x139 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id139, core[0].discard.id139, core[1].pass.id139, core[1].discard.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139, driver.pass.id139, driver.error.id139, driver.error.id139 + driver.pass.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139 - driver.pass.id139);
-    Serial.printf("  0x652 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id652, core[0].discard.id652, core[1].pass.id652, core[1].discard.id652, core[0].pass.id652 + core[0].discard.id652 + core[1].pass.id652 + core[1].discard.id652, driver.pass.id652, driver.error.id652, driver.error.id652 + driver.pass.id652, core[0].pass.id652 + core[0].discard.id652 + core[1].pass.id652 + core[1].discard.id652 - driver.pass.id652);
-    Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id174, core[0].discard.id174, core[1].pass.id174, core[1].discard.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, driver.pass.id174, driver.error.id174, driver.error.id174 + driver.pass.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174 - driver.pass.id174);
-    Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id390, core[0].discard.id390, core[1].pass.id390, core[1].discard.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390, driver.pass.id390, driver.error.id390, driver.error.id390 + driver.pass.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390 - driver.pass.id390);
+    Serial.printf("  0x048 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id048, core[0].discard.id048, core[1].pass.id048, core[1].discard.id048, core[0].pass.id048 + core[0].discard.id048 + core[1].pass.id048 + core[1].discard.id048, driver.pass.id048, driver.error.id048, driver.error.id048 + driver.pass.id048, driver.pass.id048 - core[0].pass.id048 - core[0].discard.id048 - core[1].pass.id048 - core[1].discard.id048);
+    Serial.printf("  0x139 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id139, core[0].discard.id139, core[1].pass.id139, core[1].discard.id139, core[0].pass.id139 + core[0].discard.id139 + core[1].pass.id139 + core[1].discard.id139, driver.pass.id139, driver.error.id139, driver.error.id139 + driver.pass.id139, driver.pass.id139 - core[0].pass.id139 - core[0].discard.id139 - core[1].pass.id139 - core[1].discard.id139);
+    Serial.printf("  0x652 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id652, core[0].discard.id652, core[1].pass.id652, core[1].discard.id652, core[0].pass.id652 + core[0].discard.id652 + core[1].pass.id652 + core[1].discard.id652, driver.pass.id652, driver.error.id652, driver.error.id652 + driver.pass.id652, driver.pass.id652 - core[0].pass.id652 - core[0].discard.id652 - core[1].pass.id652 - core[1].discard.id652);
+    Serial.printf("  0x174 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id174, core[0].discard.id174, core[1].pass.id174, core[1].discard.id174, core[0].pass.id174 + core[0].discard.id174 + core[1].pass.id174 + core[1].discard.id174, driver.pass.id174, driver.error.id174, driver.error.id174 + driver.pass.id174, driver.pass.id174 - core[0].pass.id174 - core[0].discard.id174 - core[1].pass.id174 - core[1].discard.id174);
+    Serial.printf("  0x390 | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d | %9d\n", core[0].pass.id390, core[0].discard.id390, core[1].pass.id390, core[1].discard.id390, core[0].pass.id390 + core[0].discard.id390 + core[1].pass.id390 + core[1].discard.id390, driver.pass.id390, driver.error.id390, driver.error.id390 + driver.pass.id390, driver.pass.id390 - core[0].pass.id390 - core[0].discard.id390 - core[1].pass.id390 - core[1].discard.id390);
     Serial.println("--------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+------------");
+    Serial.printf("\nRawSpeed max:0x%04X(%d) min:0x%04X(%d)\n", max_speed, max_speed, min_speed, min_speed);
   }
-  Serial.printf("\nRawSpeed max:0x%04X(%d) min:0x%04X(%d)   ", max_speed, max_speed, min_speed, min_speed);
-  Serial.printf("Speed max:%4.1f min:%4.1f\n", max_speed * SPEED_RATE, min_speed * SPEED_RATE);
+  // Serial.printf("\nRawSpeed max:0x%04X(%d) min:0x%04X(%d)   ", max_speed, max_speed, min_speed, min_speed);
+  // Serial.printf("Speed max:%4.1f min:%4.1f\n", max_speed * SPEED_RATE, min_speed * SPEED_RATE);
   sleep(10);
 }

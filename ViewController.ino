@@ -334,11 +334,11 @@ void handleRoot(void) {
   html += "</head>";
   html += "<body>";
   if (DebugMode == DEBUG) {
-    html += String("<p>CAN フレーム情報</p>");
+    html += "<p>CAN フレーム情報</p>";
 
-    html += String("<p><table border=\"1\" align=\"center\"><tr><td rowspan=\"3\" align=\"center\">CAN ID</td><td colspan=\"5\" align=\"center\">Task</td><td colspan=\"3\" align=\"center\">Driver</td><td rowspan=\"3\" align=\"center\">Diff</td></tr>");
-    html += String("<tr><td colspan=\"2\" align=\"center\">Core0</td><td colspan=\"2\" align=\"center\">Core1</td><td rowspan=\"2\" align=\"center\">Total</td><td rowspan=\"2\" align=\"center\">Pass</td><td rowspan=\"2\" align=\"center\">Error</td><td rowspan=\"2\" align=\"center\">Total</td></tr>");
-    html += String("<tr><td align=\"center\">Receive</td><td align=\"center\">Discard</td><td align=\"center\">Receive</td><td align=\"center\">Discard</td></tr>");
+    html += "<p><table border=\"1\" align=\"center\"><tr><td rowspan=\"3\" align=\"center\">CAN ID</td><td colspan=\"5\" align=\"center\">Task</td><td colspan=\"3\" align=\"center\">Driver</td><td rowspan=\"3\" align=\"center\">Diff</td></tr>";
+    html += "<tr><td colspan=\"2\" align=\"center\">Core0</td><td colspan=\"2\" align=\"center\">Core1</td><td rowspan=\"2\" align=\"center\">Total</td><td rowspan=\"2\" align=\"center\">Pass</td><td rowspan=\"2\" align=\"center\">Error</td><td rowspan=\"2\" align=\"center\">Total</td></tr>";
+    html += "<tr><td align=\"center\">Receive</td><td align=\"center\">Discard</td><td align=\"center\">Receive</td><td align=\"center\">Discard</td></tr>";
     html += String("<tr><td>0x048</td><td align=\"right\">" + String(core[0].pass.id048, DEC) + "</td>");
     html += String("<td align=\"right\">" + String(core[0].discard.id048, DEC) + "</td>");
     html += String("<td align=\"right\">" + String(core[1].pass.id048, DEC) + "</td>");
@@ -419,30 +419,71 @@ void handleRoot(void) {
 }
 
 void handleEEPROM(void) {
-  String msg;
+  String html;
 
   init_eeprom();
-  msg = "EEPROM を初期化しました";
 
-  // 変数msgの文字列を送信する
-  server.send(200, "text/plain; charset=utf-8", msg);
+  // HTMLを組み立てる
+  html = "<!DOCTYPE html>";
+  html += "<html>";
+  html += "<head>";
+  html += "<meta charset=\"utf-8\" http-equiv=\"refresh\" content=\"5; url=http://192.168.2.254/\">";
+  html += "<title>EEPROM 初期化</title>";
+  html += "</head>";
+  html += "<body>";
+  html += "<p>EEPROM を初期化しました</p>";
+  html += "</body>";
+  html += "</html>";
+
+  // HTMLを出力する
+  server.send(200, "text/html", html);
 }
 
 void handleViewFunc(void) {
-  String msg;
+  String html;
 
   modify_eeprom();
 
+  // HTMLを組み立てる
+  html = "<!DOCTYPE html>";
+  html += "<html>";
+  html += "<head>";
+  html += "<meta charset=\"utf-8\" http-equiv=\"refresh\" content=\"5; url=http://192.168.2.254/\">";
+  html += "<title>VIEW 機能設定</title>";
+  html += "</head>";
+  html += "<body>";
   if (VIEW_ENABLE) {
-    msg = "VIEW 機能を有効にしました";
+    html += "<p>VIEW 機能を有効にしました</p>";
   } else {
-    msg = "VIEW 機能を無効にしました";
+    html += "<p>VIEW 機能を無効にしました</p>";
   }
-  // 変数msgの文字列を送信する
-  server.send(200, "text/plain; charset=utf-8", msg);
+  html += "</body>";
+  html += "</html>";
+
+  // HTMLを出力する
+  server.send(200, "text/html", html);
 }
 
 void handleReset(void) {
+  String html;
+
+  // HTMLを組み立てる
+  html = "<!DOCTYPE html>";
+  html += "<html>";
+  html += "<head>";
+  html += "<meta charset=\"utf-8\" http-equiv=\"refresh\" content=\"5; url=http://192.168.2.254/\">";
+  html += "<title>再起動</title>";
+  html += "</head>";
+  html += "<body>";
+  html += "<p>再起動します</p>";
+  html += "</body>";
+  html += "</html>";
+
+  // HTMLを出力する
+  server.send(200, "text/html", html);
+
+  sleep(6);
+
   ESP.restart();
 }
 

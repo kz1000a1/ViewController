@@ -781,6 +781,9 @@ void core1task(void*) {
                     Serial.printf("# Information: Eliminate engine auto stop succeeded.\n");
                   }
                   Status = SUCCEEDED;
+                  idle_stop_success++;
+                  EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed) + sizeof(idle_stop_fail), idle_stop_success);
+                  EEPROM.commit();
                 }
               } else {
                 TcuStatus = IDLING_STOP_ON;
@@ -823,6 +826,9 @@ void core1task(void*) {
                             Serial.printf("# Warning: Eliminate engine auto stop failed\n");
                           }
                           Status = FAILED;
+                          idle_stop_fail++;
+                          EEPROM.put(sizeof(magic_number) + sizeof(max_speed) + sizeof(min_speed), idle_stop_fail);
+                          EEPROM.commit();
                         } else {
                           Retry++;
                           led_on();
@@ -862,7 +868,7 @@ void core1task(void*) {
       }
     }
   }
-
+  /*
   switch (Status) {
     case SUCCEEDED:
       idle_stop_success++;
@@ -883,10 +889,13 @@ void core1task(void*) {
   while (1) {
     server.handleClient();
   }
+  */
 }
 
 void loop() {
-
+  sleep(1);
+  server.handleClient();
+  /*
   if (DebugMode == DEBUG) {
     Serial.println("");
     Serial.println("--------+-----------------------------------------------------------+-----------------------------------+------------");
@@ -907,4 +916,5 @@ void loop() {
   // Serial.printf("\nRawSpeed max:0x%04X(%d) min:0x%04X(%d)   ", max_speed, max_speed, min_speed, min_speed);
   // Serial.printf("Speed max:%4.1f min:%4.1f\n", max_speed * SPEED_RATE, min_speed * SPEED_RATE);
   sleep(10);
+  */
 }

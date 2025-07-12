@@ -756,7 +756,8 @@ void core1task(void*) {
   static uint16_t PreviousCanId = CAN_ID_CCU;
   static uint8_t Retry = 0;
 
-  while (Status != SUCCEEDED && Status != FAILED) {
+  // while (Status != SUCCEEDED && Status != FAILED) {
+  while (1) {
     if (!driver_installed) {
       // Driver not installed
       delay(1000);
